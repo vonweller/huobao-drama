@@ -876,10 +876,14 @@
                   <div class="asset-name">{{ s.location }}</div>
                   <div class="asset-meta dim">{{ s.time || '—' }}</div>
                 </div>
+                <div v-if="getSceneImageState(s).running || getSceneImageState(s).failed" class="card-mini-progress" style="padding:0 10px 6px">
+                  <div class="card-mini-bar"><div class="card-mini-fill" :class="{ fail: getSceneImageState(s).failed }" :style="{ width: getSceneImageState(s).progress + '%' }"></div></div>
+                  <div class="card-mini-text">{{ getSceneImageState(s).detail || getSceneImageState(s).label }}</div>
+                </div>
                 <div class="asset-foot">
-                  <span :class="['dot', (s.image_url || s.imageUrl) && 'ok', isPendingSceneImage(s.id) && 'pending']" />
-                  <span class="dim" style="font-size:10px">{{ (s.image_url || s.imageUrl) ? '已生成' : (isPendingSceneImage(s.id) ? '生成中' : '待生成') }}</span>
-                  <button class="btn btn-sm ml-auto" :disabled="isPendingSceneImage(s.id)" @click="genSceneImg(s.id)">{{ isPendingSceneImage(s.id) ? '生成中' : '生成' }}</button>
+                  <span :class="['dot', getSceneImageState(s).dotClass]" />
+                  <span class="dim" style="font-size:10px">{{ getSceneImageState(s).statusText }}</span>
+                  <button class="btn btn-sm ml-auto" :disabled="getSceneImageState(s).running" @click="genSceneImg(s.id)">{{ getSceneImageState(s).running ? (getSceneImageState(s).progress + '%') : (getSceneImageState(s).failed ? '重试' : ((s.image_url || s.imageUrl) ? '重新生成' : '生成')) }}</button>
                 </div>
               </div>
             </div>
@@ -917,17 +921,21 @@
                     </div>
                     <div class="dub-desc">{{ getDialogueText(sb) || '未填写文本' }}</div>
                     </div>
-                    <span class="tag" :class="hasTTS(sb) ? 'tag-success' : ''">{{ hasTTS(sb) ? '已生成' : '待生成' }}</span>
+                    <span class="tag" :class="getDubState(sb).badgeClass === 'is-ready' ? 'tag-success' : (getDubState(sb).failed ? 'tag-error' : '')">{{ getDubState(sb).badge }}</span>
                   </div>
                 <div class="dub-meta">
                   <span class="dim">{{ sb.shot_type || sb.shotType || '未设景别' }}</span>
                   <span class="dim">{{ sb.duration || 10 }}s</span>
                   <span class="dim">{{ sb.location || '未设地点' }}</span>
                 </div>
+                <div v-if="getDubState(sb).running || getDubState(sb).failed" class="card-mini-progress">
+                  <div class="card-mini-bar"><div class="card-mini-fill" :class="{ fail: getDubState(sb).failed }" :style="{ width: getDubState(sb).progress + '%' }"></div></div>
+                  <div class="card-mini-text">{{ getDubState(sb).detail || getDubState(sb).label }}</div>
+                </div>
                 <div class="dub-foot">
                   <audio v-if="hasTTS(sb)" :src="'/' + getTTSUrl(sb)" controls preload="none" class="dub-audio" />
-                  <div v-else class="dim" style="font-size:12px">尚未生成语音文件</div>
-                  <button class="btn btn-sm ml-auto" @click="genShotTTS(sb)">生成配音</button>
+                  <div v-else class="dim" style="font-size:12px">{{ getDubState(sb).running ? ('生成中 ' + getDubState(sb).progress + '%') : '尚未生成语音文件' }}</div>
+                  <button class="btn btn-sm ml-auto" :disabled="getDubState(sb).running" @click="genShotTTS(sb)">{{ getDubState(sb).running ? (getDubState(sb).progress + '%') : (hasTTS(sb) ? '重新生成' : '生成配音') }}</button>
                 </div>
               </div>
             </div>
@@ -1297,14 +1305,18 @@
                   <div class="prod-meta-line">{{ sb.shot_type || sb.shotType || '未设景别' }} · {{ sb.duration || 10 }}s</div>
                   <div class="prod-dots">
                     <span :class="['dot', hasImg(sb) && 'ok']" /><span style="font-size:10px">图</span>
-                    <span :class="['dot', hasVid(sb) && 'ok', isPendingVideo(sb.id) && 'pending']" /><span style="font-size:10px">{{ isPendingVideo(sb.id) ? '视频生成中' : '视频' }}</span>
+                    <span :class="['dot', getVideoJobState(sb).dotClass]" /><span style="font-size:10px">{{ getVideoJobState(sb).statusText }}</span>
+                  </div>
+                  <div v-if="getVideoJobState(sb).running || getVideoJobState(sb).failed" class="card-mini-progress">
+                    <div class="card-mini-bar"><div class="card-mini-fill" :class="{ fail: getVideoJobState(sb).failed }" :style="{ width: getVideoJobState(sb).progress + '%' }"></div></div>
+                    <div class="card-mini-text">{{ getVideoJobState(sb).detail || getVideoJobState(sb).label }}</div>
                   </div>
                   <div v-if="videoFailMessage(sb.id)" class="prod-error">{{ videoFailMessage(sb.id) }}</div>
                 </div>
                 <div class="prod-actions">
-                  <button class="btn btn-sm" :disabled="isPendingVideo(sb.id)" @click="genVid(sb)">
+                  <button class="btn btn-sm" :disabled="getVideoJobState(sb).running" @click="genVid(sb)">
                     <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
-                    {{ isPendingVideo(sb.id) ? '生成中' : '生成视频' }}
+                    {{ getVideoJobState(sb).running ? (getVideoJobState(sb).progress + '%') : (getVideoJobState(sb).failed ? '重试视频' : (hasVid(sb) ? '重新生成' : '生成视频')) }}
                   </button>
                 </div>
               </div>
@@ -1360,14 +1372,18 @@
                   <div class="prod-dots">
                     <span :class="['dot', hasVid(sb) && 'ok']" /><span style="font-size:10px">视频</span>
                     <span :class="['dot', hasTTS(sb) && 'ok']" /><span style="font-size:10px">配音</span>
-                    <span :class="['dot', hasComposed(sb) && 'ok', isPendingCompose(sb.id) && 'pending']" /><span style="font-size:10px">{{ isPendingCompose(sb.id) ? '合成中' : '合成' }}</span>
+                    <span :class="['dot', getComposeJobState(sb).dotClass]" /><span style="font-size:10px">{{ getComposeJobState(sb).statusText }}</span>
+                  </div>
+                  <div v-if="getComposeJobState(sb).running || getComposeJobState(sb).failed" class="card-mini-progress">
+                    <div class="card-mini-bar"><div class="card-mini-fill" :class="{ fail: getComposeJobState(sb).failed }" :style="{ width: getComposeJobState(sb).progress + '%' }"></div></div>
+                    <div class="card-mini-text">{{ getComposeJobState(sb).detail || getComposeJobState(sb).label }}</div>
                   </div>
                   <div v-if="composeFailMessage(sb.id)" class="prod-error">{{ composeFailMessage(sb.id) }}</div>
                 </div>
                 <div class="prod-actions">
-                  <button class="btn btn-sm" :disabled="!hasVid(sb) || isPendingCompose(sb.id)" @click="doCompose(sb)">
+                  <button class="btn btn-sm" :disabled="!hasVid(sb) || getComposeJobState(sb).running" @click="doCompose(sb)">
                     <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
-                    {{ isPendingCompose(sb.id) ? '合成中' : (hasComposed(sb) ? '重新合成' : '开始合成') }}
+                    {{ getComposeJobState(sb).running ? (getComposeJobState(sb).progress + '%') : (getComposeJobState(sb).failed ? '重试合成' : (hasComposed(sb) ? '重新合成' : '开始合成')) }}
                   </button>
                 </div>
               </div>
@@ -1583,6 +1599,11 @@ const failedComposeMessages = ref({})
 const imageViewer = ref({ open: false, src: '', title: '' })
 // characterId -> { genId, taskId, status, progress, message, error, updatedAt }
 const charImageJobs = ref({})
+const sceneImageJobs = ref({})
+const shotFrameJobs = ref({})
+const ttsJobs = ref({})
+const videoJobs = ref({})
+const composeJobs = ref({})
 
 function configLabel(config) {
   if (!config) return '未配置'
@@ -1603,35 +1624,37 @@ const charImgReadyCount = computed(() => visualChars.value.filter(c => !!(c.imag
 function estimateJobProgress(job) {
   if (!job) return { progress: 0, label: '待生成', detail: '' }
   const st = String(job.status || '')
-  if (st === 'completed') return { progress: 100, label: '完成', detail: '图片已就绪' }
-  if (st === 'failed') return { progress: 100, label: '失败', detail: (job.error || '生成失败').slice(0, 48) }
+  if (st === 'completed') return { progress: 100, label: '完成', detail: '已完成' }
+  if (st === 'failed' || st === 'lost') return { progress: 100, label: '失败', detail: (job.error || '生成失败').slice(0, 48) }
 
   let progress = Number(job.progress)
   if (!Number.isFinite(progress) || progress <= 0) progress = 0
 
   if (st === 'queued' || st === 'pending') {
     const pos = Number(job.queuePosition || job.queue_position || 0)
-    if (pos > 0) progress = Math.max(progress, Math.min(35, 38 - Math.min(pos, 8) * 4))
-    else progress = Math.max(progress, 10)
+    if (pos > 0) progress = Math.max(progress, Math.min(30, 34 - Math.min(pos, 7) * 4))
+    else progress = Math.max(progress, 8)
     const label = pos > 0 ? ('排队第 ' + pos + ' 位') : '排队中'
     return {
-      progress: Math.max(5, Math.min(35, progress)),
+      progress: Math.max(5, Math.min(30, Math.round(progress))),
       label,
-      detail: pos > 0 ? ('前方约 ' + (pos - 1) + ' 个任务 · 串行等待中') : (job.message || '等待本地队列'),
+      detail: pos > 0 ? ('前方约 ' + Math.max(0, pos - 1) + ' 个 · 等待执行') : (job.message || '等待队列'),
     }
   }
 
+  // processing: 35%~98%，只有 completed 才到 100，避免假卡 92%
   const started = Number(job.startedAt || job.updatedAt || Date.now())
   const elapsedSec = Math.max(0, (Date.now() - started) / 1000)
-  const timeProgress = 40 + Math.min(52, Math.floor(elapsedSec / 90 * 52))
-  progress = Math.max(progress, timeProgress, 40)
+  const timeProgress = 35 + Math.min(63, Math.floor(elapsedSec / 100 * 63))
+  progress = Math.max(progress, timeProgress, 35)
+  progress = Math.min(98, progress)
   const mins = Math.floor(elapsedSec / 60)
   const secs = Math.floor(elapsedSec % 60)
   const timeText = mins > 0 ? (mins + '分' + secs + '秒') : (secs + '秒')
   return {
-    progress: Math.max(40, Math.min(95, progress)),
-    label: '推理中',
-    detail: '模型生成中 · 已用时 ' + timeText,
+    progress: Math.round(progress),
+    label: '生成中',
+    detail: '执行中 · 已用时 ' + timeText,
   }
 }
 
@@ -2735,126 +2758,276 @@ async function fetchBerniniTask(taskId) {
   if (!taskId) return null
   try {
     const r = await fetch('http://127.0.0.1:8790/v1/images/task/' + taskId, { cache: 'no-store' })
+    if (r.status === 404) return { status: 'lost', error: '本地任务已丢失（服务可能重启），请重新生成' }
     if (!r.ok) return null
     return await r.json()
-  } catch { return null }
+  } catch {
+    return null
+  }
+}
+
+async function buildJobsFromImageRows(filterFn) {
+  const rows = await imageAPI.list({ drama_id: dramaId })
+  const list = Array.isArray(rows) ? rows : []
+  const latest = {}
+  for (const row of list) {
+    const key = filterFn(row)
+    if (key == null) continue
+    const prev = latest[key]
+    if (!prev || Number(row.id || 0) > Number(prev.id || 0)) latest[key] = row
+  }
+
+  const entries = Object.entries(latest)
+  const berniniMap = {}
+  await Promise.all(entries.map(async ([, row]) => {
+    const taskId = row.taskId || row.task_id
+    if (!taskId) return
+    const bt = await fetchBerniniTask(taskId)
+    if (bt) berniniMap[taskId] = bt
+  }))
+
+  const result = {}
+  const pendingKeys = []
+  for (const [mapKey, row] of entries) {
+    let status = String(row.status || '').toLowerCase()
+    const taskId = row.taskId || row.task_id || null
+    const hasPath = !!(row.localPath || row.local_path || row.imageUrl || row.image_url)
+    const bt = taskId ? berniniMap[taskId] : null
+    if (bt?.status === 'queued') status = 'queued'
+    else if (bt?.status === 'processing') status = 'processing'
+    else if (bt?.status === 'completed') status = 'completed'
+    else if (bt?.status === 'failed') status = 'failed'
+    else if (bt?.status === 'lost') status = 'lost'
+
+    if (status === 'completed' || hasPath) {
+      result[mapKey] = {
+        genId: row.id, taskId, status: 'completed', progress: 100,
+        message: '完成', queuePosition: null, startedAt: null, error: null, updatedAt: Date.now(),
+      }
+      continue
+    }
+    if (status === 'failed' || status === 'lost') {
+      result[mapKey] = {
+        genId: row.id, taskId, status: 'failed', progress: 100,
+        message: status === 'lost' ? '已中断' : '失败',
+        queuePosition: null, startedAt: null,
+        error: bt?.error || row.errorMsg || row.error_msg || '生成失败',
+        updatedAt: Date.now(),
+      }
+      continue
+    }
+    if (status === 'processing' || status === 'pending' || status === 'queued') {
+      // taskId 存在但 Bernini 查不到 -> lost
+      if (taskId && !bt) {
+        result[mapKey] = {
+          genId: row.id, taskId, status: 'failed', progress: 100,
+          message: '已中断', error: '本地任务已丢失（服务可能重启），请重新生成', updatedAt: Date.now(),
+        }
+        continue
+      }
+      let progress = 10
+      let message = '排队中'
+      let queuePosition = bt?.queue_position || null
+      let startedAt = null
+      let finalStatus = (status === 'queued' || status === 'pending') ? 'queued' : 'processing'
+      if (bt?.status === 'queued') {
+        finalStatus = 'queued'
+        queuePosition = bt.queue_position || queuePosition
+        const pos = Number(queuePosition || 1)
+        progress = Math.max(8, Math.min(30, 34 - Math.min(pos, 7) * 4))
+        message = bt.message || ('排队第 ' + pos + ' 位')
+      } else if (bt?.status === 'processing') {
+        finalStatus = 'processing'
+        startedAt = Date.now() - (Number(bt.elapsed_sec || 0) * 1000)
+        if (!Number.isFinite(startedAt) || startedAt <= 0) startedAt = Date.now()
+        const bp = Number(bt.progress)
+        const elapsedSec = Math.max(0, (Date.now() - startedAt) / 1000)
+        const timeP = 35 + Math.min(63, Math.floor(elapsedSec / 100 * 63))
+        progress = Math.max(35, Math.min(98, Number.isFinite(bp) ? Math.max(bp, timeP) : timeP))
+        message = bt.message || '生成中'
+      } else {
+        finalStatus = 'processing'
+        startedAt = Date.now()
+        progress = 40
+        message = '生成中'
+      }
+      result[mapKey] = {
+        genId: row.id, taskId, status: finalStatus,
+        progress: Math.max(5, Math.min(98, Math.round(progress))),
+        message, queuePosition, startedAt, error: null, updatedAt: Date.now(),
+      }
+      pendingKeys.push(mapKey)
+    }
+  }
+  return { result, pendingKeys }
 }
 
 async function syncCharImageJobsFromServer() {
   try {
-    const rows = await imageAPI.list({ drama_id: dramaId })
-    const list = Array.isArray(rows) ? rows : []
-    const latestByChar = {}
-    for (const row of list) {
+    const { result } = await buildJobsFromImageRows((row) => {
       const cid = row.characterId ?? row.character_id
-      if (!cid) continue
-      const prev = latestByChar[cid]
-      if (!prev || Number(row.id || 0) > Number(prev.id || 0)) latestByChar[cid] = row
-    }
-
-    const entries = Object.entries(latestByChar)
-    const berniniMap = {}
-    await Promise.all(entries.map(async ([, row]) => {
-      const taskId = row.taskId || row.task_id
-      if (!taskId) return
-      const bt = await fetchBerniniTask(taskId)
-      if (bt) berniniMap[taskId] = bt
-    }))
-
-    const next = { ...charImageJobs.value }
-    const pending = []
-    for (const [cidRaw, row] of entries) {
-      const cid = Number(cidRaw)
-      let status = String(row.status || '').toLowerCase()
-      const taskId = row.taskId || row.task_id || null
-      const hasPath = !!(row.localPath || row.local_path || row.imageUrl || row.image_url)
-      const prevJob = next[cid] || {}
-      const bt = taskId ? berniniMap[taskId] : null
-
-      if (bt?.status === 'queued') status = 'queued'
-      else if (bt?.status === 'processing') status = 'processing'
-      else if (bt?.status === 'completed') status = 'completed'
-      else if (bt?.status === 'failed') status = 'failed'
-
-      if (status === 'completed' || hasPath) {
-        next[cid] = {
-          genId: row.id, taskId, status: 'completed', progress: 100,
-          message: '完成', queuePosition: null, startedAt: prevJob.startedAt || null,
-          error: null, updatedAt: Date.now(),
-        }
-        continue
-      }
-      if (status === 'failed') {
-        next[cid] = {
-          genId: row.id, taskId, status: 'failed', progress: 100,
-          message: '失败', queuePosition: bt?.queue_position || null,
-          startedAt: prevJob.startedAt || null,
-          error: bt?.error || row.errorMsg || row.error_msg || '生成失败',
-          updatedAt: Date.now(),
-        }
-        continue
-      }
-      if (status === 'processing' || status === 'pending' || status === 'queued') {
-        let progress = 10
-        let message = '排队中'
-        let queuePosition = bt?.queue_position || null
-        let startedAt = prevJob.startedAt || null
-        let finalStatus = (status === 'queued' || status === 'pending') ? 'queued' : 'processing'
-
-        if (bt) {
-          if (bt.status === 'queued') {
-            finalStatus = 'queued'
-            queuePosition = bt.queue_position || queuePosition
-            const pos = Number(queuePosition || 1)
-            progress = Math.max(8, Math.min(32, 36 - Math.min(pos, 7) * 4))
-            message = bt.message || ('排队第 ' + pos + ' 位')
-          } else if (bt.status === 'processing') {
-            finalStatus = 'processing'
-            if (!startedAt) startedAt = Date.now()
-            const bp = Number(bt.progress)
-            const elapsedSec = Math.max(0, (Date.now() - startedAt) / 1000)
-            const timeP = 42 + Math.min(50, Math.floor(elapsedSec / 90 * 50))
-            progress = Math.max(42, Math.min(95, Number.isFinite(bp) ? Math.max(bp, timeP) : timeP))
-            message = bt.message || '推理中'
-          }
-        } else if (finalStatus === 'queued') {
-          progress = Math.max(Number(prevJob.progress) || 10, 12)
-          message = '排队中'
-        } else {
-          if (!startedAt) startedAt = prevJob.updatedAt || Date.now()
-          const elapsedSec = Math.max(0, (Date.now() - startedAt) / 1000)
-          progress = Math.max(Number(prevJob.progress) || 40, 40 + Math.min(50, Math.floor(elapsedSec / 90 * 50)))
-          message = '生成中'
-        }
-
-        if (prevJob.progress && finalStatus === prevJob.status) {
-          progress = Math.max(progress, Number(prevJob.progress) || 0)
-        }
-
-        next[cid] = {
-          genId: row.id, taskId, status: finalStatus,
-          progress: Math.max(5, Math.min(99, Math.round(progress))),
-          message, queuePosition, startedAt,
-          error: null, updatedAt: Date.now(),
-        }
-        pending.push(cid)
-      }
-    }
-
+      return cid == null ? null : Number(cid)
+    })
+    // merge + force completed if character already has image
+    const next = { ...charImageJobs.value, ...result }
     for (const c of chars.value) {
-      if ((c.image_url || c.imageUrl) && next[c.id] && next[c.id].status !== 'failed') {
-        next[c.id] = { ...(next[c.id] || {}), status: 'completed', progress: 100, message: '完成', error: null }
+      if (c.image_url || c.imageUrl) {
+        next[c.id] = {
+          ...(next[c.id] || {}),
+          status: 'completed', progress: 100, message: '完成', error: null, updatedAt: Date.now(),
+        }
       }
     }
-
+    // progress only increases for same status
+    for (const [k, job] of Object.entries(next)) {
+      const prev = charImageJobs.value[k]
+      if (prev && prev.status === job.status && Number(prev.progress || 0) > Number(job.progress || 0) && job.status !== 'completed' && job.status !== 'failed') {
+        job.progress = prev.progress
+        if (prev.startedAt && !job.startedAt) job.startedAt = prev.startedAt
+      }
+    }
     charImageJobs.value = next
-    pendingCharImageIds.value = pending
-    imageGenTargetIds.value = pending
-    if (pending.length) startLocalStatusPolling()
+    const running = Object.entries(next)
+      .filter(([, j]) => j && (j.status === 'processing' || j.status === 'queued' || j.status === 'pending'))
+      .map(([id]) => Number(id))
+      .filter(Boolean)
+    pendingCharImageIds.value = running
+    imageGenTargetIds.value = running
+    if (running.length) startLocalStatusPolling()
     else if (!imageGenBusy.value) stopLocalStatusPolling()
   } catch (e) {
     console.warn('syncCharImageJobsFromServer failed', e)
   }
+}
+
+async function syncSceneImageJobsFromServer() {
+  try {
+    const { result } = await buildJobsFromImageRows((row) => {
+      const sid = row.sceneId ?? row.scene_id
+      return sid == null ? null : Number(sid)
+    })
+    const next = { ...sceneImageJobs.value, ...result }
+    for (const s of scenes.value) {
+      if (s.image_url || s.imageUrl) {
+        next[s.id] = { ...(next[s.id] || {}), status: 'completed', progress: 100, message: '完成', error: null, updatedAt: Date.now() }
+      }
+    }
+    sceneImageJobs.value = next
+    pendingSceneImageIds.value = Object.entries(next)
+      .filter(([, j]) => j && (j.status === 'processing' || j.status === 'queued' || j.status === 'pending'))
+      .map(([id]) => Number(id))
+      .filter(Boolean)
+  } catch (e) {
+    console.warn('syncSceneImageJobsFromServer failed', e)
+  }
+}
+
+async function syncShotFrameJobsFromServer() {
+  try {
+    const { result } = await buildJobsFromImageRows((row) => {
+      const sbid = row.storyboardId ?? row.storyboard_id
+      if (sbid == null) return null
+      const ft = row.frameType || row.frame_type || 'default'
+      if (ft !== 'first_frame' && ft !== 'last_frame') return null
+      return sbid + ':' + ft
+    })
+    const next = { ...shotFrameJobs.value, ...result }
+    for (const sb of sbs.value) {
+      if (getFirstFrame(sb)) next[sb.id + ':first_frame'] = { status: 'completed', progress: 100, message: '完成', error: null }
+      if (getLastFrame(sb)) next[sb.id + ':last_frame'] = { status: 'completed', progress: 100, message: '完成', error: null }
+    }
+    shotFrameJobs.value = next
+    pendingShotFrameKeys.value = Object.entries(next)
+      .filter(([, j]) => j && (j.status === 'processing' || j.status === 'queued' || j.status === 'pending'))
+      .map(([k]) => k)
+  } catch (e) {
+    console.warn('syncShotFrameJobsFromServer failed', e)
+  }
+}
+
+async function syncVideoJobsFromServer() {
+  try {
+    const next = { ...videoJobs.value }
+    for (const sb of sbs.value) {
+      if (hasVid(sb)) {
+        next[sb.id] = { status: 'completed', progress: 100, message: '完成', error: null, updatedAt: Date.now() }
+      } else if (failedVideoMessages.value[sb.id]) {
+        next[sb.id] = { status: 'failed', progress: 100, message: '失败', error: failedVideoMessages.value[sb.id], updatedAt: Date.now() }
+      } else if (pendingVideoIds.value.includes(sb.id)) {
+        const prev = next[sb.id] || {}
+        const startedAt = prev.startedAt || Date.now()
+        const elapsedSec = Math.max(0, (Date.now() - startedAt) / 1000)
+        const progress = Math.min(98, 20 + Math.floor(elapsedSec / 120 * 70))
+        next[sb.id] = { status: 'processing', progress, message: '视频生成中', startedAt, error: null, updatedAt: Date.now() }
+      }
+    }
+    videoJobs.value = next
+  } catch (e) { console.warn(e) }
+}
+
+async function syncComposeJobsFromServer() {
+  try {
+    const next = { ...composeJobs.value }
+    for (const sb of sbs.value) {
+      if (hasComposed(sb)) {
+        next[sb.id] = { status: 'completed', progress: 100, message: '完成', error: null, updatedAt: Date.now() }
+      } else if (failedComposeMessages.value[sb.id]) {
+        next[sb.id] = { status: 'failed', progress: 100, message: '失败', error: failedComposeMessages.value[sb.id], updatedAt: Date.now() }
+      } else if (pendingComposeIds.value.includes(sb.id)) {
+        const prev = next[sb.id] || {}
+        const startedAt = prev.startedAt || Date.now()
+        const elapsedSec = Math.max(0, (Date.now() - startedAt) / 1000)
+        const progress = Math.min(98, 15 + Math.floor(elapsedSec / 60 * 75))
+        next[sb.id] = { status: 'processing', progress, message: '合成中', startedAt, error: null, updatedAt: Date.now() }
+      }
+    }
+    composeJobs.value = next
+  } catch (e) { console.warn(e) }
+}
+
+function getGenericJobState(entityId, jobsMap, hasResult, isPending) {
+  const job = jobsMap[entityId]
+  if (hasResult && (!job || job.status === 'completed' || job.status === 'failed')) {
+    return { running: false, failed: false, progress: 100, badge: '已生成', badgeClass: 'is-ready', statusText: '已生成', label: '完成', detail: '已完成', dotClass: 'ok' }
+  }
+  if (job?.status === 'failed' && !hasResult) {
+    return { running: false, failed: true, progress: 100, badge: '失败', badgeClass: 'is-fail', statusText: '失败', label: '失败', detail: (job.error || '失败').slice(0, 40), dotClass: 'fail' }
+  }
+  if (job && (job.status === 'processing' || job.status === 'queued' || job.status === 'pending')) {
+    const est = estimateJobProgress(job)
+    const isQueue = job.status === 'queued' || job.status === 'pending'
+    return { running: true, failed: false, progress: est.progress, badge: isQueue ? '排队中' : '生成中', badgeClass: 'is-pending', statusText: est.progress + '%', label: est.label, detail: est.detail, dotClass: 'pending' }
+  }
+  if (isPending) {
+    return { running: true, failed: false, progress: 10, badge: '生成中', badgeClass: 'is-pending', statusText: '生成中', label: '提交中', detail: '任务处理中…', dotClass: 'pending' }
+  }
+  return { running: false, failed: false, progress: 0, badge: '待生成', badgeClass: '', statusText: '待生成', label: '待生成', detail: '', dotClass: '' }
+}
+
+function getSceneImageState(s) {
+  return getGenericJobState(s.id, sceneImageJobs.value, !!(s.image_url || s.imageUrl), isPendingSceneImage(s.id))
+}
+function getDubState(sb) {
+  const has = hasTTS(sb)
+  const job = ttsJobs.value[sb.id]
+  if (has) return { running: false, failed: false, progress: 100, badge: '已生成', badgeClass: 'is-ready', statusText: '已生成', label: '完成', detail: '配音已就绪', dotClass: 'ok' }
+  if (job?.status === 'failed') return { running: false, failed: true, progress: 100, badge: '失败', badgeClass: 'is-fail', statusText: '失败', label: '失败', detail: (job.error || '').slice(0, 40), dotClass: 'fail' }
+  if (job && (job.status === 'processing' || job.status === 'queued')) {
+    const est = estimateJobProgress(job)
+    return { running: true, failed: false, progress: est.progress, badge: '生成中', badgeClass: 'is-pending', statusText: est.progress + '%', label: est.label, detail: est.detail, dotClass: 'pending' }
+  }
+  return { running: false, failed: false, progress: 0, badge: '待生成', badgeClass: '', statusText: '待生成', label: '待生成', detail: '', dotClass: '' }
+}
+function getShotFrameState(sb, frameType) {
+  const key = sb.id + ':' + frameType
+  const has = frameType === 'first_frame' ? !!getFirstFrame(sb) : !!getLastFrame(sb)
+  return getGenericJobState(key, shotFrameJobs.value, has, isPendingShotFrame(sb.id, frameType))
+}
+function getVideoJobState(sb) {
+  return getGenericJobState(sb.id, videoJobs.value, hasVid(sb), isPendingVideo(sb.id))
+}
+function getComposeJobState(sb) {
+  return getGenericJobState(sb.id, composeJobs.value, hasComposed(sb), isPendingCompose(sb.id))
 }
 
 function startLocalStatusPolling() {
@@ -2863,6 +3036,10 @@ function startLocalStatusPolling() {
   const tick = async () => {
     await fetchLocalQueueStatus()
     await syncCharImageJobsFromServer()
+    await syncSceneImageJobsFromServer()
+    await syncShotFrameJobsFromServer()
+    await syncVideoJobsFromServer()
+    await syncComposeJobsFromServer()
   }
   tick()
   localStatusTimer = setInterval(tick, 2000)
@@ -3022,17 +3199,21 @@ function batchCharImages() {
 async function genSceneImg(id) {
   try {
     if (!isPendingSceneImage(id)) pendingSceneImageIds.value.push(id)
+    sceneImageJobs.value = { ...sceneImageJobs.value, [id]: { status: 'processing', progress: 8, message: '提交中', startedAt: Date.now(), updatedAt: Date.now() } }
     await sceneAPI.generateImage(id, epId.value)
-    toast.success('场景图片生成中')
+    toast.success('场景图片已加入队列')
     await refresh()
+    startLocalStatusPolling()
     watchAsyncResult(() => {
       const scene = scenes.value.find(s => s.id === id)
       const done = !!(scene?.image_url || scene?.imageUrl)
-      if (done) pendingSceneImageIds.value = pendingSceneImageIds.value.filter(item => item !== id)
-      return done
-    })
+      const failed = sceneImageJobs.value[id]?.status === 'failed'
+      if (done || failed) pendingSceneImageIds.value = pendingSceneImageIds.value.filter(item => item !== id)
+      return done || failed
+    }, isLocalImageProvider.value ? 180 : 48, 2500)
   } catch (e) {
     pendingSceneImageIds.value = pendingSceneImageIds.value.filter(item => item !== id)
+    sceneImageJobs.value = { ...sceneImageJobs.value, [id]: { status: 'failed', progress: 100, message: '失败', error: e.message, updatedAt: Date.now() } }
     toast.error(e.message)
   }
 }
@@ -3040,14 +3221,22 @@ function batchSceneImages() {
   const ids = scenes.value.filter(s => !(s.image_url || s.imageUrl)).map(s => s.id)
   if (!ids.length) { toast.info('所有场景图片已生成'); return }
   pendingSceneImageIds.value = [...new Set([...pendingSceneImageIds.value, ...ids])]
-  ids.forEach(id => { sceneAPI.generateImage(id, epId.value).then(() => refresh()).catch(e => toast.error(e.message)) })
-  toast.success('场景图片批量生成中')
+  const patch = { ...sceneImageJobs.value }
+  for (const id of ids) patch[id] = { status: 'queued', progress: 8, message: '批量排队中', startedAt: Date.now(), updatedAt: Date.now() }
+  sceneImageJobs.value = patch
+  ids.forEach(id => { sceneAPI.generateImage(id, epId.value).then(() => refresh()).catch(e => {
+    sceneImageJobs.value = { ...sceneImageJobs.value, [id]: { status: 'failed', progress: 100, message: '失败', error: e.message, updatedAt: Date.now() } }
+    toast.error(e.message)
+  }) })
+  toast.success('场景图片批量生成中（看卡片进度）')
+  startLocalStatusPolling()
   watchAsyncResult(() => ids.every(id => {
     const scene = scenes.value.find(s => s.id === id)
     const done = !!(scene?.image_url || scene?.imageUrl)
-    if (done) pendingSceneImageIds.value = pendingSceneImageIds.value.filter(item => item !== id)
-    return done
-  }), 36)
+    const failed = sceneImageJobs.value[id]?.status === 'failed'
+    if (done || failed) pendingSceneImageIds.value = pendingSceneImageIds.value.filter(item => item !== id)
+    return done || failed
+  }), isLocalImageProvider.value ? 240 : 60, 2500)
 }
 
 const IGNORE_TTS_SPEAKERS = /^(环境音|环境声|音效|效果音|sfx|sound ?effect|bgm|背景音|背景音乐|ambient)$/i
@@ -3084,10 +3273,15 @@ function getDialogueSpeaker(sb) {
 }
 async function genShotTTS(sb) {
   try {
+    ttsJobs.value = { ...ttsJobs.value, [sb.id]: { status: 'processing', progress: 15, message: '配音生成中', startedAt: Date.now(), updatedAt: Date.now() } }
     await storyboardAPI.generateTTS(sb.id)
-    toast.success(`镜头 #${sb.storyboard_number || sb.storyboardNumber || sb.id} 配音已生成`)
+    ttsJobs.value = { ...ttsJobs.value, [sb.id]: { status: 'completed', progress: 100, message: '完成', updatedAt: Date.now() } }
+    toast.success('镜头 #' + (sb.storyboard_number || sb.storyboardNumber || sb.id) + ' 配音已生成')
     await refresh()
-  } catch (e) { toast.error(e.message) }
+  } catch (e) {
+    ttsJobs.value = { ...ttsJobs.value, [sb.id]: { status: 'failed', progress: 100, message: '失败', error: e.message, updatedAt: Date.now() } }
+    toast.error(e.message)
+  }
 }
 async function batchShotTTS() {
   const pending = sbs.value.filter(sb => hasDialogue(sb) && !hasTTS(sb))
@@ -3095,11 +3289,22 @@ async function batchShotTTS() {
     toast.info(ttsEligibleCount.value ? '所有镜头配音已生成' : '当前没有可生成的对白或旁白')
     return
   }
-  const results = await Promise.allSettled(pending.map(sb => storyboardAPI.generateTTS(sb.id)))
+  const patch = { ...ttsJobs.value }
+  for (const sb of pending) patch[sb.id] = { status: 'processing', progress: 12, message: '批量配音中', startedAt: Date.now(), updatedAt: Date.now() }
+  ttsJobs.value = patch
+  const results = await Promise.allSettled(pending.map(async (sb) => {
+    try {
+      await storyboardAPI.generateTTS(sb.id)
+      ttsJobs.value = { ...ttsJobs.value, [sb.id]: { status: 'completed', progress: 100, message: '完成', updatedAt: Date.now() } }
+    } catch (e) {
+      ttsJobs.value = { ...ttsJobs.value, [sb.id]: { status: 'failed', progress: 100, message: '失败', error: e.message, updatedAt: Date.now() } }
+      throw e
+    }
+  }))
   const okCount = results.filter(r => r.status === 'fulfilled').length
   const failCount = results.length - okCount
-  if (okCount) toast.success(`已生成 ${okCount} 条镜头配音`)
-  if (failCount) toast.error(`${failCount} 条镜头配音生成失败`)
+  if (okCount) toast.success('已生成 ' + okCount + ' 条镜头配音')
+  if (failCount) toast.error(failCount + ' 条镜头配音生成失败')
   await refresh()
 }
 
@@ -3209,12 +3414,15 @@ async function genVid(sb) {
   try {
     delete failedVideoMessages.value[sb.id]
     if (!isPendingVideo(sb.id)) pendingVideoIds.value.push(sb.id)
+    videoJobs.value = { ...videoJobs.value, [sb.id]: { status: 'processing', progress: 15, message: '视频生成中', startedAt: Date.now(), updatedAt: Date.now() } }
     const generation = await videoAPI.generate(params)
-    toast.success('视频生成中')
+    toast.success('视频已提交，看卡片进度')
     await refresh()
+    startLocalStatusPolling()
     pollVideoGeneration(generation?.id, sb.id)
   } catch (e) {
     pendingVideoIds.value = pendingVideoIds.value.filter(item => item !== sb.id)
+    videoJobs.value = { ...videoJobs.value, [sb.id]: { status: 'failed', progress: 100, message: '失败', error: e.message, updatedAt: Date.now() } }
     toast.error(e.message)
   }
 }
@@ -3258,6 +3466,9 @@ async function pollVideoGeneration(generationId, storyboardId) {
   toast.error('视频生成超时')
 }
 async function doCompose(sb) {
+  composeJobs.value = { ...composeJobs.value, [sb.id]: { status: 'processing', progress: 12, message: '合成中', startedAt: Date.now(), updatedAt: Date.now() } }
+  if (!isPendingCompose(sb.id)) pendingComposeIds.value.push(sb.id)
+  startLocalStatusPolling()
   try {
     delete failedComposeMessages.value[sb.id]
     if (!isPendingCompose(sb.id)) pendingComposeIds.value.push(sb.id)
