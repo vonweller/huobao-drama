@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="studio" v-if="drama">
     <header class="studio-topbar">
       <div class="studio-topbar-main">
@@ -928,14 +928,17 @@
                   <span class="dim">{{ sb.duration || 10 }}s</span>
                   <span class="dim">{{ sb.location || '未设地点' }}</span>
                 </div>
-                <div v-if="getDubState(sb).running || getDubState(sb).failed" class="card-mini-progress">
-                  <div class="card-mini-bar"><div class="card-mini-fill" :class="{ fail: getDubState(sb).failed }" :style="{ width: getDubState(sb).progress + '%' }"></div></div>
-                  <div class="card-mini-text">{{ getDubState(sb).detail || getDubState(sb).label }}</div>
+                <div class="card-mini-progress">
+                  <div class="card-mini-bar"><div class="card-mini-fill" :class="{ fail: getDubState(sb).failed, idle: !getDubState(sb).running && !getDubState(sb).failed && !hasTTS(sb) }" :style="{ width: (hasTTS(sb) ? 100 : getDubState(sb).progress) + '%' }"></div></div>
+                  <div class="card-mini-text">{{ hasTTS(sb) ? '配音已生成' : (getDubState(sb).detail || getDubState(sb).label || '点击右侧生成配音') }}</div>
                 </div>
                 <div class="dub-foot">
                   <audio v-if="hasTTS(sb)" :src="'/' + getTTSUrl(sb)" controls preload="none" class="dub-audio" />
                   <div v-else class="dim" style="font-size:12px">{{ getDubState(sb).running ? ('生成中 ' + getDubState(sb).progress + '%') : '尚未生成语音文件' }}</div>
-                  <button class="btn btn-sm ml-auto" :disabled="getDubState(sb).running" @click="genShotTTS(sb)">{{ getDubState(sb).running ? (getDubState(sb).progress + '%') : (hasTTS(sb) ? '重新生成' : '生成配音') }}</button>
+                  <button class="btn btn-sm ml-auto" :disabled="getDubState(sb).running" @click="genShotTTS(sb)">
+                    <Loader2 v-if="getDubState(sb).running" :size="11" class="animate-spin" />
+                    {{ getDubState(sb).running ? ('生成中 ' + getDubState(sb).progress + '%') : (getDubState(sb).failed ? '重试配音' : (hasTTS(sb) ? '重新生成' : '生成配音')) }}
+                  </button>
                 </div>
               </div>
             </div>
@@ -1037,40 +1040,46 @@
                   <!-- Thumbnails -->
                   <div class="frame-thumbs">
                     <div class="frame-thumb-wrap">
-                      <div class="frame-thumb" @click.stop="!isPendingShotFrame(sb.id, 'first_frame') && genShotFrame(sb, 'first_frame')">
+                      <div class="frame-thumb" @click.stop="!getShotFrameState(sb, 'first_frame').running && genShotFrame(sb, 'first_frame')">
                         <img
                           v-if="getFirstFrame(sb)"
                           :src="'/' + getFirstFrame(sb)"
                           class="previewable-image"
-                          @click.stop="openImageViewer('/' + getFirstFrame(sb), `镜头 #${String(i + 1).padStart(2, '0')} 首帧`)"
+                          @click.stop="openImageViewer('/' + getFirstFrame(sb), '镜头 #' + String(i + 1).padStart(2, '0') + ' 首帧')"
                         />
                         <div v-else class="frame-thumb-empty">
-                          <Loader2 v-if="isPendingShotFrame(sb.id, 'first_frame')" :size="14" class="animate-spin" />
+                          <div v-if="getShotFrameState(sb, 'first_frame').running" class="frame-progress-ring">{{ getShotFrameState(sb, 'first_frame').progress }}%</div>
                           <svg v-else width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
                         </div>
                         <span v-if="getFirstFrame(sb)" class="frame-re">
                           <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
                         </span>
                       </div>
-                      <span class="frame-thumb-label">{{ isPendingShotFrame(sb.id, 'first_frame') ? '首帧生成中' : '首帧' }}</span>
+                      <span class="frame-thumb-label">{{ getShotFrameState(sb, 'first_frame').running ? ('首帧 ' + getShotFrameState(sb, 'first_frame').progress + '%') : (getShotFrameState(sb, 'first_frame').failed ? '首帧失败' : '首帧') }}</span>
+                      <div class="card-mini-progress frame-mini">
+                        <div class="card-mini-bar"><div class="card-mini-fill" :class="{ fail: getShotFrameState(sb, 'first_frame').failed, idle: !getShotFrameState(sb, 'first_frame').running && !getShotFrameState(sb, 'first_frame').failed && !getFirstFrame(sb) }" :style="{ width: (getFirstFrame(sb) ? 100 : getShotFrameState(sb, 'first_frame').progress) + '%' }"></div></div>
+                      </div>
                     </div>
                     <div v-if="frameMode === 'first_last'" class="frame-thumb-wrap">
-                      <div class="frame-thumb" @click.stop="!isPendingShotFrame(sb.id, 'last_frame') && genShotFrame(sb, 'last_frame')">
+                      <div class="frame-thumb" @click.stop="!getShotFrameState(sb, 'last_frame').running && genShotFrame(sb, 'last_frame')">
                         <img
                           v-if="getLastFrame(sb)"
                           :src="'/' + getLastFrame(sb)"
                           class="previewable-image"
-                          @click.stop="openImageViewer('/' + getLastFrame(sb), `镜头 #${String(i + 1).padStart(2, '0')} 尾帧`)"
+                          @click.stop="openImageViewer('/' + getLastFrame(sb), '镜头 #' + String(i + 1).padStart(2, '0') + ' 尾帧')"
                         />
                         <div v-else class="frame-thumb-empty">
-                          <Loader2 v-if="isPendingShotFrame(sb.id, 'last_frame')" :size="14" class="animate-spin" />
+                          <div v-if="getShotFrameState(sb, 'last_frame').running" class="frame-progress-ring">{{ getShotFrameState(sb, 'last_frame').progress }}%</div>
                           <svg v-else width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
                         </div>
                         <span v-if="getLastFrame(sb)" class="frame-re">
                           <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
                         </span>
                       </div>
-                      <span class="frame-thumb-label">{{ isPendingShotFrame(sb.id, 'last_frame') ? '尾帧生成中' : '尾帧' }}</span>
+                      <span class="frame-thumb-label">{{ getShotFrameState(sb, 'last_frame').running ? ('尾帧 ' + getShotFrameState(sb, 'last_frame').progress + '%') : (getShotFrameState(sb, 'last_frame').failed ? '尾帧失败' : '尾帧') }}</span>
+                      <div class="card-mini-progress frame-mini">
+                        <div class="card-mini-bar"><div class="card-mini-fill" :class="{ fail: getShotFrameState(sb, 'last_frame').failed, idle: !getShotFrameState(sb, 'last_frame').running && !getShotFrameState(sb, 'last_frame').failed && !getLastFrame(sb) }" :style="{ width: (getLastFrame(sb) ? 100 : getShotFrameState(sb, 'last_frame').progress) + '%' }"></div></div>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -1278,7 +1287,7 @@
               </div>
             </div>
             <div class="prod-grid">
-              <div v-for="(sb, i) in sbs" :key="sb.id" class="card prod-card">
+              <div v-for="(sb, i) in sbs" :key="sb.id" class="card prod-card" :class="{ 'is-running': getVideoJobState(sb).running }">
                 <div class="prod-cover">
                   <video
                     v-if="hasVid(sb)"
@@ -1292,13 +1301,18 @@
                     v-else-if="hasImg(sb)"
                     :src="'/' + getStoryboardCover(sb)"
                     class="previewable-image"
-                    @click.stop="openImageViewer('/' + getStoryboardCover(sb), `镜头 #${String(i + 1).padStart(2, '0')} 参考图`)"
+                    @click.stop="openImageViewer('/' + getStoryboardCover(sb), '镜头 #' + String(i + 1).padStart(2, '0') + ' 参考图')"
                   />
                   <div v-else class="prod-cover-empty">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
                   </div>
+                  <div v-if="getVideoJobState(sb).running" class="prod-progress-overlay">
+                    <div class="frame-progress-ring big">{{ getVideoJobState(sb).progress }}%</div>
+                    <div class="card-progress-msg">{{ getVideoJobState(sb).label }}</div>
+                  </div>
                   <span class="prod-idx">#{{ String(i+1).padStart(2,'0') }}</span>
                   <span v-if="hasComposed(sb)" class="prod-overlay-badge">已合成</span>
+                  <span v-else-if="getVideoJobState(sb).running" class="prod-overlay-badge is-pending-badge">{{ getVideoJobState(sb).progress }}%</span>
                 </div>
                 <div class="prod-info">
                   <div class="prod-desc truncate">{{ sb.description || sb.title || '—' }}</div>
@@ -1307,16 +1321,17 @@
                     <span :class="['dot', hasImg(sb) && 'ok']" /><span style="font-size:10px">图</span>
                     <span :class="['dot', getVideoJobState(sb).dotClass]" /><span style="font-size:10px">{{ getVideoJobState(sb).statusText }}</span>
                   </div>
-                  <div v-if="getVideoJobState(sb).running || getVideoJobState(sb).failed" class="card-mini-progress">
-                    <div class="card-mini-bar"><div class="card-mini-fill" :class="{ fail: getVideoJobState(sb).failed }" :style="{ width: getVideoJobState(sb).progress + '%' }"></div></div>
-                    <div class="card-mini-text">{{ getVideoJobState(sb).detail || getVideoJobState(sb).label }}</div>
+                  <div class="card-mini-progress">
+                    <div class="card-mini-bar"><div class="card-mini-fill" :class="{ fail: getVideoJobState(sb).failed, idle: !getVideoJobState(sb).running && !getVideoJobState(sb).failed && !hasVid(sb) }" :style="{ width: (hasVid(sb) ? 100 : getVideoJobState(sb).progress) + '%' }"></div></div>
+                    <div class="card-mini-text">{{ hasVid(sb) ? '视频已生成' : (getVideoJobState(sb).detail || getVideoJobState(sb).label || '点击下方开始生成') }}</div>
                   </div>
                   <div v-if="videoFailMessage(sb.id)" class="prod-error">{{ videoFailMessage(sb.id) }}</div>
                 </div>
                 <div class="prod-actions">
                   <button class="btn btn-sm" :disabled="getVideoJobState(sb).running" @click="genVid(sb)">
-                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
-                    {{ getVideoJobState(sb).running ? (getVideoJobState(sb).progress + '%') : (getVideoJobState(sb).failed ? '重试视频' : (hasVid(sb) ? '重新生成' : '生成视频')) }}
+                    <Loader2 v-if="getVideoJobState(sb).running" :size="11" class="animate-spin" />
+                    <svg v-else width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+                    {{ getVideoJobState(sb).running ? ('生成中 ' + getVideoJobState(sb).progress + '%') : (getVideoJobState(sb).failed ? '重试视频' : (hasVid(sb) ? '重新生成' : '生成视频')) }}
                   </button>
                 </div>
               </div>
@@ -1336,7 +1351,7 @@
               </div>
             </div>
             <div class="prod-grid">
-              <div v-for="(sb, i) in sbs" :key="sb.id" class="card prod-card">
+              <div v-for="(sb, i) in sbs" :key="sb.id" class="card prod-card" :class="{ 'is-running': getComposeJobState(sb).running }">
                 <div class="prod-cover">
                   <video
                     v-if="hasComposed(sb)"
@@ -1358,13 +1373,18 @@
                     v-else-if="hasImg(sb)"
                     :src="'/' + getStoryboardCover(sb)"
                     class="previewable-image"
-                    @click.stop="openImageViewer('/' + getStoryboardCover(sb), `镜头 #${String(i + 1).padStart(2, '0')} 参考图`)"
+                    @click.stop="openImageViewer('/' + getStoryboardCover(sb), '镜头 #' + String(i + 1).padStart(2, '0') + ' 参考图')"
                   />
                   <div v-else class="prod-cover-empty">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
                   </div>
+                  <div v-if="getComposeJobState(sb).running" class="prod-progress-overlay">
+                    <div class="frame-progress-ring big">{{ getComposeJobState(sb).progress }}%</div>
+                    <div class="card-progress-msg">{{ getComposeJobState(sb).label }}</div>
+                  </div>
                   <span class="prod-idx">#{{ String(i+1).padStart(2,'0') }}</span>
                   <span v-if="hasComposed(sb)" class="prod-overlay-badge">已合成</span>
+                  <span v-else-if="getComposeJobState(sb).running" class="prod-overlay-badge is-pending-badge">{{ getComposeJobState(sb).progress }}%</span>
                 </div>
                 <div class="prod-info">
                   <div class="prod-desc truncate">{{ sb.description || sb.title || '—' }}</div>
@@ -1374,16 +1394,17 @@
                     <span :class="['dot', hasTTS(sb) && 'ok']" /><span style="font-size:10px">配音</span>
                     <span :class="['dot', getComposeJobState(sb).dotClass]" /><span style="font-size:10px">{{ getComposeJobState(sb).statusText }}</span>
                   </div>
-                  <div v-if="getComposeJobState(sb).running || getComposeJobState(sb).failed" class="card-mini-progress">
-                    <div class="card-mini-bar"><div class="card-mini-fill" :class="{ fail: getComposeJobState(sb).failed }" :style="{ width: getComposeJobState(sb).progress + '%' }"></div></div>
-                    <div class="card-mini-text">{{ getComposeJobState(sb).detail || getComposeJobState(sb).label }}</div>
+                  <div class="card-mini-progress">
+                    <div class="card-mini-bar"><div class="card-mini-fill" :class="{ fail: getComposeJobState(sb).failed, idle: !getComposeJobState(sb).running && !getComposeJobState(sb).failed && !hasComposed(sb) }" :style="{ width: (hasComposed(sb) ? 100 : getComposeJobState(sb).progress) + '%' }"></div></div>
+                    <div class="card-mini-text">{{ hasComposed(sb) ? '合成已完成' : (getComposeJobState(sb).detail || getComposeJobState(sb).label || (!hasVid(sb) ? '请先生成视频' : '点击下方开始合成')) }}</div>
                   </div>
                   <div v-if="composeFailMessage(sb.id)" class="prod-error">{{ composeFailMessage(sb.id) }}</div>
                 </div>
                 <div class="prod-actions">
                   <button class="btn btn-sm" :disabled="!hasVid(sb) || getComposeJobState(sb).running" @click="doCompose(sb)">
-                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
-                    {{ getComposeJobState(sb).running ? (getComposeJobState(sb).progress + '%') : (getComposeJobState(sb).failed ? '重试合成' : (hasComposed(sb) ? '重新合成' : '开始合成')) }}
+                    <Loader2 v-if="getComposeJobState(sb).running" :size="11" class="animate-spin" />
+                    <svg v-else width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+                    {{ getComposeJobState(sb).running ? ('合成中 ' + getComposeJobState(sb).progress + '%') : (getComposeJobState(sb).failed ? '重试合成' : (hasComposed(sb) ? '重新合成' : '开始合成')) }}
                   </button>
                 </div>
               </div>
@@ -3427,84 +3448,124 @@ async function genVid(sb) {
   }
 }
 async function pollVideoGeneration(generationId, storyboardId) {
+  const bump = (progress, message, status = 'processing') => {
+    const prev = videoJobs.value[storyboardId] || {}
+    videoJobs.value = {
+      ...videoJobs.value,
+      [storyboardId]: {
+        ...prev,
+        status,
+        progress: Math.max(Number(prev.progress) || 0, progress),
+        message,
+        startedAt: prev.startedAt || Date.now(),
+        updatedAt: Date.now(),
+        error: status === 'failed' ? message : null,
+      },
+    }
+  }
   if (!generationId) {
     watchAsyncResult(() => {
       const target = sbs.value.find(s => s.id === storyboardId)
       const done = !!(target?.video_url || target?.videoUrl)
-      if (done) pendingVideoIds.value = pendingVideoIds.value.filter(item => item !== storyboardId)
+      if (done) {
+        pendingVideoIds.value = pendingVideoIds.value.filter(item => item !== storyboardId)
+        bump(100, '完成', 'completed')
+      } else {
+        const prev = videoJobs.value[storyboardId] || {}
+        const startedAt = prev.startedAt || Date.now()
+        const elapsed = Math.max(0, (Date.now() - startedAt) / 1000)
+        bump(Math.min(98, 20 + Math.floor(elapsed / 120 * 70)), '视频生成中')
+      }
       return done
-    }, 60, 4000)
+    }, 80, 3000)
     return
   }
   for (let i = 0; i < 120; i++) {
-    await sleep(4000)
+    await sleep(3000)
     try {
       const res = await videoAPI.get(generationId)
       await refresh()
       if (res?.status === 'completed') {
         pendingVideoIds.value = pendingVideoIds.value.filter(item => item !== storyboardId)
         delete failedVideoMessages.value[storyboardId]
+        bump(100, '完成', 'completed')
         toast.success('视频生成完成')
         return
       }
       if (res?.status === 'failed') {
         pendingVideoIds.value = pendingVideoIds.value.filter(item => item !== storyboardId)
-        failedVideoMessages.value = {
-          ...failedVideoMessages.value,
-          [storyboardId]: res?.error_msg || res?.errorMsg || '视频生成失败',
-        }
-        toast.error(failedVideoMessages.value[storyboardId])
+        const msg = res?.error_msg || res?.errorMsg || '视频生成失败'
+        failedVideoMessages.value = { ...failedVideoMessages.value, [storyboardId]: msg }
+        bump(100, msg, 'failed')
+        toast.error(msg)
         return
       }
+      // processing
+      const prev = videoJobs.value[storyboardId] || {}
+      const startedAt = prev.startedAt || Date.now()
+      const elapsed = Math.max(0, (Date.now() - startedAt) / 1000)
+      const serverPct = Number(res?.progress || res?.percent || 0)
+      const timePct = 20 + Math.floor(elapsed / 120 * 70)
+      bump(Math.min(98, Math.max(serverPct, timePct)), res?.message || '视频生成中')
     } catch {}
   }
   pendingVideoIds.value = pendingVideoIds.value.filter(item => item !== storyboardId)
-  failedVideoMessages.value = {
-    ...failedVideoMessages.value,
-    [storyboardId]: '视频生成超时',
-  }
+  failedVideoMessages.value = { ...failedVideoMessages.value, [storyboardId]: '视频生成超时' }
+  bump(100, '视频生成超时', 'failed')
   toast.error('视频生成超时')
 }
 async function doCompose(sb) {
-  composeJobs.value = { ...composeJobs.value, [sb.id]: { status: 'processing', progress: 12, message: '合成中', startedAt: Date.now(), updatedAt: Date.now() } }
   if (!isPendingCompose(sb.id)) pendingComposeIds.value.push(sb.id)
+  composeJobs.value = {
+    ...composeJobs.value,
+    [sb.id]: { status: 'processing', progress: 12, message: '合成中', startedAt: Date.now(), updatedAt: Date.now() },
+  }
   startLocalStatusPolling()
   try {
     delete failedComposeMessages.value[sb.id]
-    if (!isPendingCompose(sb.id)) pendingComposeIds.value.push(sb.id)
     await composeAPI.shot(sb.id)
+    composeJobs.value = {
+      ...composeJobs.value,
+      [sb.id]: { status: 'completed', progress: 100, message: '完成', updatedAt: Date.now() },
+    }
     toast.success('合成完成')
     pendingComposeIds.value = pendingComposeIds.value.filter(item => item !== sb.id)
     refresh()
   } catch (e) {
     pendingComposeIds.value = pendingComposeIds.value.filter(item => item !== sb.id)
-    failedComposeMessages.value = {
-      ...failedComposeMessages.value,
-      [sb.id]: e.message,
+    failedComposeMessages.value = { ...failedComposeMessages.value, [sb.id]: e.message }
+    composeJobs.value = {
+      ...composeJobs.value,
+      [sb.id]: { status: 'failed', progress: 100, message: '失败', error: e.message, updatedAt: Date.now() },
     }
     toast.error(e.message)
   }
 }
 function batchVideos() {
-  const pendingIds = sbs.value.filter(s => !hasVid(s)).map(s => s.id)
-  pendingIds.forEach(id => {
-    const sb = sbs.value.find(item => item.id === id)
-    if (sb) genVid(sb)
-  })
-  if (pendingIds.length) {
-    pendingVideoIds.value = [...new Set([...pendingVideoIds.value, ...pendingIds])]
-    watchAsyncResult(() => pendingIds.every(id => {
-      const target = sbs.value.find(s => s.id === id)
-      const done = !!(target?.video_url || target?.videoUrl)
-      if (done) pendingVideoIds.value = pendingVideoIds.value.filter(item => item !== id)
-      return done
-    }), 80, 4000)
+  const pending = sbs.value.filter(s => !hasVid(s))
+  if (!pending.length) { toast.info('所有镜头视频已生成'); return }
+  const patch = { ...videoJobs.value }
+  for (const sb of pending) {
+    patch[sb.id] = { status: 'processing', progress: 10, message: '批量排队中', startedAt: Date.now(), updatedAt: Date.now() }
   }
+  videoJobs.value = patch
+  pendingVideoIds.value = [...new Set([...pendingVideoIds.value, ...pending.map(s => s.id)])]
+  startLocalStatusPolling()
+  pending.forEach(sb => genVid(sb))
+  toast.success('批量视频已提交，请看每张卡片进度')
 }
 async function batchCompose() {
+  const targets = sbs.value.filter(sb => !!(sb.video_url || sb.videoUrl))
+  if (!targets.length) { toast.warning('请先生成镜头视频'); return }
+  const patch = { ...composeJobs.value }
+  for (const sb of targets) {
+    patch[sb.id] = { status: 'processing', progress: 10, message: '批量合成中', startedAt: Date.now(), updatedAt: Date.now() }
+  }
+  composeJobs.value = patch
+  pendingComposeIds.value = [...new Set(targets.map(sb => sb.id))]
+  startLocalStatusPolling()
   await composeAPI.all(epId.value)
-  pendingComposeIds.value = [...new Set(sbs.value.filter(sb => !!sb.video_url || !!sb.videoUrl).map(sb => sb.id))]
-  toast.success('批量合成已开始')
+  toast.success('批量合成已开始，请看每张卡片进度')
   pollComposeStatus()
 }
 async function doMerge() {
@@ -4572,6 +4633,27 @@ onMounted(() => { refresh(); loadConfigs(); loadVoices() })
 }
 .prod-actions { display: flex; gap: 6px; padding: 8px 10px 10px; border-top: 1px solid rgba(27, 41, 64, 0.08); }
 .prod-actions .btn { flex: 1; justify-content: center; }
+.prod-card.is-running { border-color: rgba(79, 124, 255, 0.35); box-shadow: 0 12px 28px rgba(79,124,255,0.12); }
+.prod-progress-overlay {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+  background: rgba(248, 251, 255, 0.72);
+  backdrop-filter: blur(2px);
+  z-index: 2;
+}
+.frame-progress-ring {
+  min-width: 40px; height: 40px; padding: 0 6px;
+  border-radius: 999px;
+  display: grid; place-items: center;
+  font-size: 11px; font-weight: 800; color: #2f5bff;
+  background: rgba(255,255,255,0.95);
+  border: 2px solid rgba(79,124,255,0.35);
+}
+.frame-progress-ring.big { min-width: 54px; height: 54px; font-size: 13px; }
+.prod-overlay-badge.is-pending-badge { background: #4f7cff; }
+.card-mini-fill.idle { background: rgba(19,51,121,0.12); }
+.frame-mini { margin-top: 4px; width: 100%; }
+.frame-thumb-empty { position: relative; width: 100%; height: 100%; display:flex; align-items:center; justify-content:center; }
 
 /* Image viewer */
 .image-viewer-overlay {
@@ -5131,3 +5213,4 @@ onMounted(() => { refresh(); loadConfigs(); loadVoices() })
   }
 }
 </style>
+
