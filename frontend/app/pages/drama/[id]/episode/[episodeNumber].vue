@@ -775,38 +775,72 @@
           <!-- Sub: Characters -->
           <div v-if="prodTab === 'chars'" class="prod-content">
             <div class="prod-section-bar">
-              <span class="dim" style="font-size:12px">{{ visualChars.length }} 个需生成形象角色</span>
-              <span class="tag">{{ lockedImageConfigLabel }}</span>
+              <span class="dim" style="font-size:12px">{{ visualChars.length }} 个需生成形象角色 · 已完成 {{ charImgReadyCount }}/{{ visualChars.length }}</span>
+              <span class="tag">{{ lockedImageConfigLabel === '未配置' && activeImageConfig ? configLabel(activeImageConfig) : lockedImageConfigLabel }}</span>
               <span v-if="chars.length > visualChars.length" class="tag">旁白仅保留声音</span>
-              <div class="ml-auto flex gap-1">
-                <button class="btn btn-sm" @click="batchCharImages">
-                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
-                  批量生成
+              <div class="ml-auto flex gap-1 items-center">
+                <label class="local-mode-toggle" title="本地模型默认串行，显存够再开并行">
+                  <span class="dim" style="font-size:11px">推理模式</span>
+                  <select v-model="localInferMode" class="input input-xs" @change="applyLocalInferMode">
+                    <option value="serial">单线程/串行</option>
+                    <option value="parallel">多线程/并行</option>
+                  </select>
+                  <select v-if="localInferMode==='parallel'" v-model.number="localConcurrency" class="input input-xs" @change="applyLocalInferMode">
+                    <option :value="2">2 路</option>
+                    <option :value="3">3 路</option>
+                    <option :value="4">4 路</option>
+                  </select>
+                </label>
+                <button class="btn btn-sm" :disabled="imageGenBusy" @click="batchCharImages">
+                  <Loader2 v-if="imageGenBusy" :size="11" class="animate-spin" />
+                  <svg v-else width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                  {{ imageGenBusy ? 批量中  : '批量生成' }}
                 </button>
               </div>
             </div>
+            <div v-if="imageGenBusy || (localQueueInfo && (localQueueInfo.queued || localQueueInfo.running))" class="gen-progress-panel">
+              <div class="gen-progress-top">
+                <span class="gen-progress-title">角色形象生成进度</span>
+                <span class="dim" style="font-size:11px">{{ imageGenProgressText || '同步中' }}</span>
+              </div>
+              <div class="gen-progress-bar"><div class="gen-progress-fill" :style="{ width: Math.max(imageGenPercent, 4) + '%' }"></div></div>
+              <div class="gen-progress-meta dim">
+                <span v-if="localQueueInfo">本地队列 {{ localQueueInfo.queued }} · 推理中 {{ localQueueInfo.running }} · {{ localQueueInfo.mode === 'parallel' ? ('并行 ' + localQueueInfo.max_concurrency + ' 路') : '串行' }}</span>
+                <span v-else>正在同步任务状态…</span>
+              </div>
+            </div>
             <div class="asset-grid">
-              <div v-for="c in visualChars" :key="c.id" class="card asset-card">
+              <div v-for="c in visualChars" :key="c.id" class="card asset-card" :class="{ 'is-running': getCharImageState(c).running }">
                 <div class="asset-cover">
                   <img
                     v-if="c.image_url || c.imageUrl"
                     :src="'/' + (c.image_url || c.imageUrl)"
                     class="previewable-image"
-                    @click.stop="openImageViewer('/' + (c.image_url || c.imageUrl), `${c.name} 角色形象`)"
+                    @click.stop="openImageViewer('/' + (c.image_url || c.imageUrl), (c.name || '') + ' 角色形象')"
                   />
                   <div v-else class="asset-cover-empty">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                    <div v-if="getCharImageState(c).running" class="card-progress-overlay">
+                      <div class="card-progress-ring">{{ getCharImageState(c).progress }}%</div>
+                      <div class="card-progress-msg">{{ getCharImageState(c).label }}</div>
+                    </div>
                   </div>
-                  <span class="asset-cover-badge" :class="(c.image_url || c.imageUrl) ? 'is-ready' : (isPendingCharImage(c.id) ? 'is-pending' : '')">{{ (c.image_url || c.imageUrl) ? '已生成' : (isPendingCharImage(c.id) ? '生成中' : '待生成') }}</span>
+                  <span class="asset-cover-badge" :class="getCharImageState(c).badgeClass">{{ getCharImageState(c).badge }}</span>
                 </div>
                 <div class="asset-body">
                   <div class="asset-name">{{ c.name }}</div>
                   <div class="asset-meta dim">{{ c.role || '角色' }}</div>
+                  <div v-if="getCharImageState(c).running || getCharImageState(c).failed" class="card-mini-progress">
+                    <div class="card-mini-bar"><div class="card-mini-fill" :class="{ fail: getCharImageState(c).failed }" :style="{ width: getCharImageState(c).progress + '%' }"></div></div>
+                    <div class="card-mini-text">{{ getCharImageState(c).detail }}</div>
+                  </div>
                 </div>
                 <div class="asset-foot">
-                  <span :class="['dot', (c.image_url || c.imageUrl) && 'ok', isPendingCharImage(c.id) && 'pending']" />
-                  <span class="dim" style="font-size:10px">{{ (c.image_url || c.imageUrl) ? '已生成' : (isPendingCharImage(c.id) ? '生成中' : '待生成') }}</span>
-                  <button class="btn btn-sm ml-auto" :disabled="isPendingCharImage(c.id)" @click="genCharImg(c.id)">{{ isPendingCharImage(c.id) ? '生成中' : '生成' }}</button>
+                  <span :class="['dot', getCharImageState(c).dotClass]" />
+                  <span class="dim" style="font-size:10px">{{ getCharImageState(c).statusText }}</span>
+                  <button class="btn btn-sm ml-auto" :disabled="getCharImageState(c).running" @click="genCharImg(c.id)">
+                    {{ getCharImageState(c).running ? (getCharImageState(c).progress + '%') : (getCharImageState(c).failed ? '重试' : ((c.image_url || c.imageUrl) ? '重新生成' : '生成')) }}
+                  </button>
                 </div>
               </div>
             </div>
@@ -831,7 +865,7 @@
                     v-if="s.image_url || s.imageUrl"
                     :src="'/' + (s.image_url || s.imageUrl)"
                     class="previewable-image"
-                    @click.stop="openImageViewer('/' + (s.image_url || s.imageUrl), `${s.location} 场景图`)"
+                    @click.stop="openImageViewer('/' + (s.image_url || s.imageUrl), (s.location || '') + ' 场景图')"
                   />
                   <div v-else class="asset-cover-empty">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
@@ -1547,6 +1581,8 @@ const pendingComposeIds = ref([])
 const failedVideoMessages = ref({})
 const failedComposeMessages = ref({})
 const imageViewer = ref({ open: false, src: '', title: '' })
+// characterId -> { genId, taskId, status, progress, message, error, updatedAt }
+const charImageJobs = ref({})
 
 function configLabel(config) {
   if (!config) return '未配置'
@@ -1556,7 +1592,88 @@ function configLabel(config) {
 }
 
 function isPendingCharImage(id) {
+  const job = charImageJobs.value[id]
+  if (job && (job.status === 'processing' || job.status === 'queued' || job.status === 'pending')) return true
   return pendingCharImageIds.value.includes(id)
+}
+
+const charImgReadyCount = computed(() => visualChars.value.filter(c => !!(c.image_url || c.imageUrl)).length)
+
+/** 根据任务阶段估算真实进度（不是假死 12%） */
+function estimateJobProgress(job) {
+  if (!job) return { progress: 0, label: '待生成', detail: '' }
+  const st = String(job.status || '')
+  if (st === 'completed') return { progress: 100, label: '完成', detail: '图片已就绪' }
+  if (st === 'failed') return { progress: 100, label: '失败', detail: (job.error || '生成失败').slice(0, 48) }
+
+  let progress = Number(job.progress)
+  if (!Number.isFinite(progress) || progress <= 0) progress = 0
+
+  if (st === 'queued' || st === 'pending') {
+    const pos = Number(job.queuePosition || job.queue_position || 0)
+    if (pos > 0) progress = Math.max(progress, Math.min(35, 38 - Math.min(pos, 8) * 4))
+    else progress = Math.max(progress, 10)
+    const label = pos > 0 ? ('排队第 ' + pos + ' 位') : '排队中'
+    return {
+      progress: Math.max(5, Math.min(35, progress)),
+      label,
+      detail: pos > 0 ? ('前方约 ' + (pos - 1) + ' 个任务 · 串行等待中') : (job.message || '等待本地队列'),
+    }
+  }
+
+  const started = Number(job.startedAt || job.updatedAt || Date.now())
+  const elapsedSec = Math.max(0, (Date.now() - started) / 1000)
+  const timeProgress = 40 + Math.min(52, Math.floor(elapsedSec / 90 * 52))
+  progress = Math.max(progress, timeProgress, 40)
+  const mins = Math.floor(elapsedSec / 60)
+  const secs = Math.floor(elapsedSec % 60)
+  const timeText = mins > 0 ? (mins + '分' + secs + '秒') : (secs + '秒')
+  return {
+    progress: Math.max(40, Math.min(95, progress)),
+    label: '推理中',
+    detail: '模型生成中 · 已用时 ' + timeText,
+  }
+}
+
+function getCharImageState(c) {
+  const hasImg = !!(c.image_url || c.imageUrl)
+  const job = charImageJobs.value[c.id]
+  if (hasImg && (!job || job.status === 'completed' || job.status === 'failed')) {
+    return {
+      running: false, failed: false, progress: 100,
+      badge: '已生成', badgeClass: 'is-ready', statusText: '已生成',
+      label: '完成', detail: '图片已就绪', dotClass: 'ok',
+    }
+  }
+  if (job?.status === 'failed' && !hasImg) {
+    const est = estimateJobProgress(job)
+    return {
+      running: false, failed: true, progress: 100,
+      badge: '失败', badgeClass: 'is-fail', statusText: '失败',
+      label: '失败', detail: est.detail, dotClass: 'fail',
+    }
+  }
+  if (job && (job.status === 'processing' || job.status === 'queued' || job.status === 'pending')) {
+    const est = estimateJobProgress(job)
+    const isQueue = job.status === 'queued' || job.status === 'pending'
+    return {
+      running: true, failed: false, progress: est.progress,
+      badge: isQueue ? '排队中' : '生成中', badgeClass: 'is-pending',
+      statusText: est.progress + '%', label: est.label, detail: est.detail, dotClass: 'pending',
+    }
+  }
+  if (isPendingCharImage(c.id)) {
+    return {
+      running: true, failed: false, progress: 8,
+      badge: '提交中', badgeClass: 'is-pending', statusText: '提交中',
+      label: '提交中', detail: '正在创建任务…', dotClass: 'pending',
+    }
+  }
+  return {
+    running: false, failed: false, progress: 0,
+    badge: '待生成', badgeClass: '', statusText: '待生成',
+    label: '待生成', detail: '', dotClass: '',
+  }
 }
 
 function openImageViewer(src, title = '') {
@@ -2471,6 +2588,8 @@ async function refresh() {
       else if (epHasScript || epHasContent) scriptStep.value = 1
       else scriptStep.value = 0
       await loadLatestGridImage()
+      await syncCharImageJobsFromServer()
+      await fetchLocalQueueStatus()
     }
   } catch (e) {
     toast.error(e.message)
@@ -2519,30 +2638,329 @@ function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms))
 }
 
+const localInferMode = ref('serial')
+const localConcurrency = ref(2)
+const localQueueInfo = ref(null)
+const imageGenTargetIds = ref([])
+const imageGenStartedAt = ref(0)
+let localStatusTimer = null
+
+const activeImageConfig = computed(() => {
+  const locked = imageConfigs.value.find(c => c.id === lockedImageConfigId.value)
+  if (locked) return locked
+  const actives = imageConfigs.value
+    .filter(c => c.is_active !== false && c.isActive !== false)
+    .slice()
+    .sort((a, b) => Number(b.priority || 0) - Number(a.priority || 0))
+  return actives[0] || null
+})
+const isLocalImageProvider = computed(() => {
+  const cfg = activeImageConfig.value
+  const provider = String(cfg?.provider || '').toLowerCase()
+  const label = String(lockedImageConfigLabel.value || cfg?.name || '').toLowerCase()
+  return provider.includes('bernini') || label.includes('bernini') || label.includes('本地')
+})
+const imageGenBusy = computed(() => pendingCharImageIds.value.length > 0 || imageGenTargetIds.value.length > 0)
+const imageGenDoneCount = computed(() => {
+  const ids = imageGenTargetIds.value
+  if (!ids.length) return 0
+  return ids.filter(id => {
+    const c = chars.value.find(x => x.id === id)
+    return !!(c?.image_url || c?.imageUrl)
+  }).length
+})
+const imageGenPercent = computed(() => {
+  const total = imageGenTargetIds.value.length
+  if (!total) return localQueueInfo.value?.running ? 30 : 0
+  return Math.min(99, Math.round((imageGenDoneCount.value / total) * 100))
+})
+const imageGenProgressText = computed(() => {
+  const total = imageGenTargetIds.value.length
+  if (!total) return localQueueInfo.value ? `${localQueueInfo.value.running} 推理中` : ''
+  return `${imageGenDoneCount.value}/${total}`
+})
+
+async function fetchLocalQueueStatus() {
+  if (!isLocalImageProvider.value) {
+    localQueueInfo.value = null
+    return
+  }
+  try {
+    const base = 'http://127.0.0.1:8790'
+    const [st, settings] = await Promise.all([
+      fetch(base + '/v1/status').then(r => r.json()).catch(() => null),
+      fetch(base + '/v1/settings').then(r => r.json()).catch(() => null),
+    ])
+    if (st) {
+      localQueueInfo.value = {
+        queued: st.queued || 0,
+        running: st.running || 0,
+        completed: st.completed || 0,
+        failed: st.failed || 0,
+        mode: st.mode || settings?.mode || 'serial',
+        max_concurrency: st.max_concurrency || settings?.max_concurrency || 1,
+      }
+    }
+    if (settings?.mode) {
+      localInferMode.value = settings.mode
+      localConcurrency.value = settings.max_concurrency || 2
+    }
+  } catch {
+    localQueueInfo.value = null
+  }
+}
+
+async function applyLocalInferMode() {
+  try {
+    const body = {
+      mode: localInferMode.value,
+      max_concurrency: localInferMode.value === 'serial' ? 1 : Number(localConcurrency.value || 2),
+    }
+    const resp = await fetch('http://127.0.0.1:8790/v1/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    const data = await resp.json()
+    if (!resp.ok) throw new Error(data.detail || '设置失败')
+    toast.success(localInferMode.value === 'serial' ? '已切换为串行（更稳）' : `已切换为并行 ${body.max_concurrency} 路`)
+    await fetchLocalQueueStatus()
+  } catch (e) {
+    toast.error('本地推理设置失败：' + (e.message || e) + '（请确认 Bernini 服务已启动）')
+  }
+}
+
+
+async function fetchBerniniTask(taskId) {
+  if (!taskId) return null
+  try {
+    const r = await fetch('http://127.0.0.1:8790/v1/images/task/' + taskId, { cache: 'no-store' })
+    if (!r.ok) return null
+    return await r.json()
+  } catch { return null }
+}
+
+async function syncCharImageJobsFromServer() {
+  try {
+    const rows = await imageAPI.list({ drama_id: dramaId })
+    const list = Array.isArray(rows) ? rows : []
+    const latestByChar = {}
+    for (const row of list) {
+      const cid = row.characterId ?? row.character_id
+      if (!cid) continue
+      const prev = latestByChar[cid]
+      if (!prev || Number(row.id || 0) > Number(prev.id || 0)) latestByChar[cid] = row
+    }
+
+    const entries = Object.entries(latestByChar)
+    const berniniMap = {}
+    await Promise.all(entries.map(async ([, row]) => {
+      const taskId = row.taskId || row.task_id
+      if (!taskId) return
+      const bt = await fetchBerniniTask(taskId)
+      if (bt) berniniMap[taskId] = bt
+    }))
+
+    const next = { ...charImageJobs.value }
+    const pending = []
+    for (const [cidRaw, row] of entries) {
+      const cid = Number(cidRaw)
+      let status = String(row.status || '').toLowerCase()
+      const taskId = row.taskId || row.task_id || null
+      const hasPath = !!(row.localPath || row.local_path || row.imageUrl || row.image_url)
+      const prevJob = next[cid] || {}
+      const bt = taskId ? berniniMap[taskId] : null
+
+      if (bt?.status === 'queued') status = 'queued'
+      else if (bt?.status === 'processing') status = 'processing'
+      else if (bt?.status === 'completed') status = 'completed'
+      else if (bt?.status === 'failed') status = 'failed'
+
+      if (status === 'completed' || hasPath) {
+        next[cid] = {
+          genId: row.id, taskId, status: 'completed', progress: 100,
+          message: '完成', queuePosition: null, startedAt: prevJob.startedAt || null,
+          error: null, updatedAt: Date.now(),
+        }
+        continue
+      }
+      if (status === 'failed') {
+        next[cid] = {
+          genId: row.id, taskId, status: 'failed', progress: 100,
+          message: '失败', queuePosition: bt?.queue_position || null,
+          startedAt: prevJob.startedAt || null,
+          error: bt?.error || row.errorMsg || row.error_msg || '生成失败',
+          updatedAt: Date.now(),
+        }
+        continue
+      }
+      if (status === 'processing' || status === 'pending' || status === 'queued') {
+        let progress = 10
+        let message = '排队中'
+        let queuePosition = bt?.queue_position || null
+        let startedAt = prevJob.startedAt || null
+        let finalStatus = (status === 'queued' || status === 'pending') ? 'queued' : 'processing'
+
+        if (bt) {
+          if (bt.status === 'queued') {
+            finalStatus = 'queued'
+            queuePosition = bt.queue_position || queuePosition
+            const pos = Number(queuePosition || 1)
+            progress = Math.max(8, Math.min(32, 36 - Math.min(pos, 7) * 4))
+            message = bt.message || ('排队第 ' + pos + ' 位')
+          } else if (bt.status === 'processing') {
+            finalStatus = 'processing'
+            if (!startedAt) startedAt = Date.now()
+            const bp = Number(bt.progress)
+            const elapsedSec = Math.max(0, (Date.now() - startedAt) / 1000)
+            const timeP = 42 + Math.min(50, Math.floor(elapsedSec / 90 * 50))
+            progress = Math.max(42, Math.min(95, Number.isFinite(bp) ? Math.max(bp, timeP) : timeP))
+            message = bt.message || '推理中'
+          }
+        } else if (finalStatus === 'queued') {
+          progress = Math.max(Number(prevJob.progress) || 10, 12)
+          message = '排队中'
+        } else {
+          if (!startedAt) startedAt = prevJob.updatedAt || Date.now()
+          const elapsedSec = Math.max(0, (Date.now() - startedAt) / 1000)
+          progress = Math.max(Number(prevJob.progress) || 40, 40 + Math.min(50, Math.floor(elapsedSec / 90 * 50)))
+          message = '生成中'
+        }
+
+        if (prevJob.progress && finalStatus === prevJob.status) {
+          progress = Math.max(progress, Number(prevJob.progress) || 0)
+        }
+
+        next[cid] = {
+          genId: row.id, taskId, status: finalStatus,
+          progress: Math.max(5, Math.min(99, Math.round(progress))),
+          message, queuePosition, startedAt,
+          error: null, updatedAt: Date.now(),
+        }
+        pending.push(cid)
+      }
+    }
+
+    for (const c of chars.value) {
+      if ((c.image_url || c.imageUrl) && next[c.id] && next[c.id].status !== 'failed') {
+        next[c.id] = { ...(next[c.id] || {}), status: 'completed', progress: 100, message: '完成', error: null }
+      }
+    }
+
+    charImageJobs.value = next
+    pendingCharImageIds.value = pending
+    imageGenTargetIds.value = pending
+    if (pending.length) startLocalStatusPolling()
+    else if (!imageGenBusy.value) stopLocalStatusPolling()
+  } catch (e) {
+    console.warn('syncCharImageJobsFromServer failed', e)
+  }
+}
+
+function startLocalStatusPolling() {
+  stopLocalStatusPolling()
+  // 同时刷队列概览 + 每张卡片的真实 task 进度
+  const tick = async () => {
+    await fetchLocalQueueStatus()
+    await syncCharImageJobsFromServer()
+  }
+  tick()
+  localStatusTimer = setInterval(tick, 2000)
+}
+function stopLocalStatusPolling() {
+  if (localStatusTimer) {
+    clearInterval(localStatusTimer)
+    localStatusTimer = null
+  }
+}
+
 function watchAsyncResult(check, attempts = 24, delay = 2500) {
   void (async () => {
+    startLocalStatusPolling()
     for (let i = 0; i < attempts; i++) {
       await sleep(delay)
-      await refresh()
-      if (check()) return
+      // 只同步任务，不全量 reset UI 状态
+      try {
+        drama.value = await dramaAPI.get(dramaId)
+        const ep = drama.value.episodes?.find(e => (e.episode_number || e.episodeNumber) === episodeNumber)
+        if (ep) {
+          episode.value = ep
+          try { chars.value = await episodeAPI.characters(ep.id) } catch {}
+        }
+      } catch {}
+      await syncCharImageJobsFromServer()
+      await fetchLocalQueueStatus()
+      if (check()) {
+        stopLocalStatusPolling()
+        // 保留 completed/failed 记录，仅清运行队列
+        imageGenTargetIds.value = imageGenTargetIds.value.filter(id => {
+          const st = charImageJobs.value[id]?.status
+          return st === 'processing' || st === 'queued' || st === 'pending'
+        })
+        return
+      }
     }
+    stopLocalStatusPolling()
+    toast.warning('生成超时，请点「刷新」同步最新进度')
   })()
 }
 
 async function genCharImg(id) {
   try {
     if (!isPendingCharImage(id)) pendingCharImageIds.value.push(id)
-    await characterAPI.generateImage(id, epId.value)
-    toast.success('角色图片生成中')
+    imageGenTargetIds.value = [...new Set([...imageGenTargetIds.value, id])]
+    imageGenStartedAt.value = Date.now()
+    charImageJobs.value = {
+      ...charImageJobs.value,
+      [id]: {
+        genId: null,
+        taskId: null,
+        status: 'processing',
+        progress: 8,
+        message: '提交任务…',
+        error: null,
+        updatedAt: Date.now(),
+      },
+    }
+    const res = await characterAPI.generateImage(id, epId.value)
+    const genId = res?.image_generation_id || res?.id || null
+    if (genId) {
+      charImageJobs.value = {
+        ...charImageJobs.value,
+        [id]: {
+          ...(charImageJobs.value[id] || {}),
+          genId,
+          status: 'queued',
+          progress: 12,
+          message: '已入队',
+          updatedAt: Date.now(),
+        },
+      }
+    }
+    toast.success('角色图片已加入队列')
     await refresh()
     watchAsyncResult(() => {
       const char = chars.value.find(c => c.id === id)
       const done = !!(char?.image_url || char?.imageUrl)
-      if (done) pendingCharImageIds.value = pendingCharImageIds.value.filter(item => item !== id)
-      return done
-    })
+      const failed = charImageJobs.value[id]?.status === 'failed'
+      if (done || failed) pendingCharImageIds.value = pendingCharImageIds.value.filter(item => item !== id)
+      return done || failed
+    }, isLocalImageProvider.value ? 180 : 48, 2500)
   } catch (e) {
     pendingCharImageIds.value = pendingCharImageIds.value.filter(item => item !== id)
+    imageGenTargetIds.value = imageGenTargetIds.value.filter(item => item !== id)
+    charImageJobs.value = {
+      ...charImageJobs.value,
+      [id]: {
+        genId: null,
+        taskId: null,
+        status: 'failed',
+        progress: 100,
+        message: '失败',
+        error: e.message,
+        updatedAt: Date.now(),
+      },
+    }
     toast.error(e.message)
   }
 }
@@ -2550,17 +2968,54 @@ function batchCharImages() {
   const ids = visualChars.value.filter(c => !(c.image_url || c.imageUrl)).map(c => c.id)
   if (!ids.length) { toast.info('所有角色图片已生成'); return }
   pendingCharImageIds.value = [...new Set([...pendingCharImageIds.value, ...ids])]
-  characterAPI.batchImages(ids, epId.value).then(async () => {
-    toast.success('角色图片批量生成中')
+  imageGenTargetIds.value = [...ids]
+  imageGenStartedAt.value = Date.now()
+  const patch = { ...charImageJobs.value }
+  for (const id of ids) {
+    patch[id] = {
+      genId: null,
+      taskId: null,
+      status: 'queued',
+      progress: 8,
+      message: '批量排队中',
+      error: null,
+      updatedAt: Date.now(),
+    }
+  }
+  charImageJobs.value = patch
+  characterAPI.batchImages(ids, epId.value).then(async (res) => {
+    const msg = res?.message || '角色图片批量生成中（请看每个卡片进度）'
+    toast.success(msg)
     await refresh()
-    watchAsyncResult(() => ids.every(id => {
-      const char = chars.value.find(c => c.id === id)
-      const done = !!(char?.image_url || char?.imageUrl)
-      if (done) pendingCharImageIds.value = pendingCharImageIds.value.filter(item => item !== id)
-      return done
-    }), 36)
+    watchAsyncResult(() => {
+      const allSettled = ids.every(id => {
+        const char = chars.value.find(c => c.id === id)
+        const done = !!(char?.image_url || char?.imageUrl)
+        const failed = charImageJobs.value[id]?.status === 'failed'
+        return done || failed
+      })
+      pendingCharImageIds.value = pendingCharImageIds.value.filter(item => {
+        const char = chars.value.find(c => c.id === item)
+        const failed = charImageJobs.value[item]?.status === 'failed'
+        return !(char?.image_url || char?.imageUrl) && !failed
+      })
+      return allSettled
+    }, isLocalImageProvider.value ? 240 : 60, 2500)
   }).catch(e => {
     pendingCharImageIds.value = pendingCharImageIds.value.filter(item => !ids.includes(item))
+    imageGenTargetIds.value = []
+    const failPatch = { ...charImageJobs.value }
+    for (const id of ids) {
+      failPatch[id] = {
+        ...(failPatch[id] || {}),
+        status: 'failed',
+        progress: 100,
+        message: '失败',
+        error: e.message,
+        updatedAt: Date.now(),
+      }
+    }
+    charImageJobs.value = failPatch
     toast.error(e.message)
   })
 }
@@ -3725,6 +4180,46 @@ onMounted(() => { refresh(); loadConfigs(); loadVoices() })
 /* Production content */
 .prod-content { flex: 1; overflow-y: auto; padding: 12px 16px; display: flex; flex-direction: column; gap: 12px; }
 .prod-section-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.local-mode-toggle { display: inline-flex; align-items: center; gap: 6px; margin-right: 4px; }
+.input-xs { height: 28px; padding: 0 8px; font-size: 11px; border-radius: 8px; min-width: 0; }
+.gen-progress-panel {
+  margin: 0 0 12px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(19, 51, 121, 0.10);
+  background: linear-gradient(180deg, rgba(255,255,255,0.9), rgba(244,248,255,0.82));
+  display: flex; flex-direction: column; gap: 8px;
+}
+.gen-progress-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.gen-progress-title { font-size: 12px; font-weight: 700; color: var(--text-1); }
+.gen-progress-bar { height: 8px; border-radius: 999px; background: rgba(19,51,121,0.08); overflow: hidden; }
+.gen-progress-fill { height: 100%; border-radius: inherit; background: linear-gradient(90deg, #4f7cff, #7aa2ff); transition: width .4s ease; }
+.gen-progress-meta { font-size: 11px; }
+.asset-card.is-running { border-color: rgba(79, 124, 255, 0.35); box-shadow: 0 10px 24px rgba(79,124,255,0.12); }
+.card-progress-overlay {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+  background: rgba(248, 251, 255, 0.72);
+  backdrop-filter: blur(2px);
+}
+.card-progress-ring {
+  min-width: 44px; height: 44px; padding: 0 8px;
+  border-radius: 999px;
+  display: grid; place-items: center;
+  font-size: 12px; font-weight: 800; color: #2f5bff;
+  background: rgba(255,255,255,0.92);
+  border: 2px solid rgba(79,124,255,0.35);
+}
+.card-progress-msg { font-size: 11px; color: var(--text-2); font-weight: 600; }
+.asset-cover { position: relative; }
+.asset-cover-empty { position: relative; min-height: 120px; display: flex; align-items: center; justify-content: center; }
+.card-mini-progress { margin-top: 6px; display: flex; flex-direction: column; gap: 4px; }
+.card-mini-bar { height: 5px; border-radius: 999px; background: rgba(19,51,121,0.08); overflow: hidden; }
+.card-mini-fill { height: 100%; border-radius: inherit; background: linear-gradient(90deg, #4f7cff, #7aa2ff); transition: width .35s ease; }
+.card-mini-fill.fail { background: linear-gradient(90deg, #ef5350, #ff8a80); }
+.card-mini-text { font-size: 10px; color: var(--text-3); line-height: 1.35; }
+.asset-cover-badge.is-fail { background: rgba(239,83,80,0.12); color: #c62828; }
+.dot.fail { background: #ef5350; }
 
 .dub-grid { display: flex; flex-direction: column; gap: 10px; }
 .dub-card { padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; border-radius: 20px; background: linear-gradient(180deg, rgba(255,255,255,0.74), rgba(248,251,255,0.58)); }

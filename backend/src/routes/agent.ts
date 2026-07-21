@@ -6,6 +6,7 @@ import { createAgent, validAgentTypes } from '../agents/index.js'
 import { success, badRequest } from '../utils/response.js'
 import { logTaskError, logTaskPayload, logTaskProgress, logTaskStart, logTaskSuccess } from '../utils/task-logger.js'
 import { directExtractCharactersAndScenes } from '../services/direct-extract.js'
+import { directBreakStoryboards } from '../services/direct-storyboard.js'
 
 const app = new Hono()
 
@@ -79,6 +80,33 @@ app.post('/:type/chat', async (c) => {
     }
   }
 
+  // storyboard 默认单轮直提（避免中转 multi-step tools 502）
+  if (agentType === 'storyboard_breaker' && !body.force_agent) {
+    try {
+      logTaskProgress('Agent', 'storyboard-direct-start', {
+        dramaId: drama_id,
+        episodeId: episode_id,
+      })
+      const summary = await directBreakStoryboards(Number(episode_id), Number(drama_id))
+      const elapsed = ((performance.now() - startTime) / 1000).toFixed(1)
+      logTaskSuccess('Agent', 'storyboard-direct-done', { ...summary, elapsedSeconds: elapsed })
+      const modeLabel = summary.mode === 'rule' ? '规则兜底' : 'AI直提'
+      return success(c, {
+        type: 'done',
+        mode: summary.mode === 'rule' ? 'rule_fallback' : 'direct',
+        text: `分镜拆解完成（${modeLabel}）：${summary.count} 个镜头，总时长约 ${summary.totalDuration} 秒。${summary.note ? '\n' + summary.note : ''}`,
+        toolCalls: [],
+        toolResults: [],
+        summary,
+      })
+    } catch (directErr: any) {
+      logTaskError('Agent', 'storyboard-direct-failed', { error: directErr.message })
+      // 直提（含规则兜底）失败才回退多轮 agent；通常不应到这里
+      logTaskProgress('Agent', 'storyboard-agent-fallback', { reason: directErr.message })
+      return badRequest(c, `分镜拆解失败：${directErr.message}`)
+    }
+  }
+
   try {
     const result = await agent.generate(
       [{ role: 'user', content: message }],
@@ -118,7 +146,7 @@ app.post('/:type/chat', async (c) => {
     const rawMsg = err?.message || 'Agent execution failed'
     const responseBody = err?.responseBody || err?.data?.error?.message || ''
 
-    // extractor：多轮 tools 被中转 502 时，自动降级单轮提取
+    // 多轮 tools 被中转 502 时，自动降级单轮直提
     const isUpstream = /连接上游服务失败|upstream_network_error|502|Bad Gateway/i.test(`${rawMsg} ${responseBody}`)
     if (agentType === 'extractor' && isUpstream) {
       try {
@@ -140,11 +168,38 @@ app.post('/:type/chat', async (c) => {
         })
       } catch (fallbackErr: any) {
         logTaskError('Agent', 'extractor-fallback-failed', { error: fallbackErr.message })
-        // 继续走下方 friendly 错误
         const fe = fallbackErr.message || rawMsg
         return badRequest(
           c,
-          `提取失败。设置页“测试配置”只验证了模型列表可达；真正提取需要多轮对话/工具调用。当前中转返回：${rawMsg}。兜底提取也失败：${fe}`,
+          `提取失败。中转返回：${rawMsg}。兜底提取也失败：${fe}`,
+        )
+      }
+    }
+
+    if (agentType === 'storyboard_breaker' && isUpstream) {
+      try {
+        logTaskProgress('Agent', 'storyboard-fallback-start', {
+          dramaId: drama_id,
+          episodeId: episode_id,
+          reason: rawMsg,
+        })
+        const summary = await directBreakStoryboards(Number(episode_id), Number(drama_id))
+        const fallbackElapsed = ((performance.now() - startTime) / 1000).toFixed(1)
+        logTaskSuccess('Agent', 'storyboard-fallback-done', { ...summary, elapsedSeconds: fallbackElapsed })
+        const modeLabel = summary.mode === 'rule' ? '规则兜底' : 'AI直提'
+        return success(c, {
+          type: 'done',
+          mode: summary.mode === 'rule' ? 'rule_fallback' : 'direct_fallback',
+          text: `已使用${modeLabel}完成分镜：${summary.count} 个镜头，总时长约 ${summary.totalDuration} 秒。\n说明：多轮 Agent 被上游拒绝（${rawMsg}）。${summary.note || ''}`,
+          toolCalls: [],
+          toolResults: [],
+          summary,
+        })
+      } catch (fallbackErr: any) {
+        logTaskError('Agent', 'storyboard-fallback-failed', { error: fallbackErr.message })
+        return badRequest(
+          c,
+          `分镜拆解失败。中转返回：${rawMsg}。兜底也失败：${fallbackErr.message || rawMsg}`,
         )
       }
     }

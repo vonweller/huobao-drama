@@ -82,6 +82,8 @@ app.post('/:id/generate-image', async (c) => {
 })
 
 // POST /characters/batch-generate-images
+// 注意：本地 Bernini 8GB 显存不能并发，generateImage 内部会异步跑；
+// 这里仍然逐个 enqueue，由 bernini_service 全局串行执行。
 app.post('/batch-generate-images', async (c) => {
   const body = await c.req.json()
   const ids: number[] = body.character_ids || []
@@ -89,17 +91,35 @@ app.post('/batch-generate-images', async (c) => {
   const [ep] = db.select().from(schema.episodes).where(eq(schema.episodes.id, Number(body.episode_id))).all()
   if (!ep) return badRequest(c, 'Episode not found')
   const results: number[] = []
-  for (const cid of ids) {
+  // 错开 enqueue，避免瞬时打爆本地服务连接；真正推理在 bernini 侧串行
+  for (let i = 0; i < ids.length; i++) {
+    const cid = ids[i]
     const [char] = db.select().from(schema.characters).where(eq(schema.characters.id, cid)).all()
     if (!char) continue
     const prompt = `${char.name}, ${char.appearance || char.description || '人物立绘'}, 高质量, 正面, 白色背景`
     try {
-      const genId = await generateImage({ characterId: cid, dramaId: char.dramaId, prompt, configId: ep.imageConfigId ?? undefined })
+      const genId = await generateImage({
+        characterId: cid,
+        dramaId: char.dramaId,
+        prompt,
+        size: '512x512',
+        configId: ep.imageConfigId ?? undefined,
+      })
       results.push(genId)
-    } catch {}
+      // 轻微错峰，让串行队列更稳
+      if (i < ids.length - 1) {
+        await new Promise(r => setTimeout(r, 300))
+      }
+    } catch (err: any) {
+      logTaskError('CharacterImage', 'batch-item-failed', { characterId: cid, error: err.message })
+    }
   }
   logTaskSuccess('CharacterImage', 'batch-generate', { episodeId: ep.id, requested: ids.length, started: results.length })
-  return success(c, { count: results.length, ids: results })
+  return success(c, {
+    count: results.length,
+    ids: results,
+    message: '已加入生图队列（本地模型串行执行，请耐心等待）',
+  })
 })
 
 export default app

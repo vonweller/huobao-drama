@@ -213,7 +213,9 @@ async function pollImageTask(id: number, config: AIConfig, taskId: string) {
         .run()
       return
     }
-    await new Promise(r => setTimeout(r, 5000))
+    // 本地 Bernini 排队可能较久，轮询稍密一点便于更新状态
+    const waitMs = String(config.provider || '').toLowerCase().includes('bernini') ? 2500 : 5000
+    await new Promise(r => setTimeout(r, waitMs))
     if (Date.now() - startedAt >= maxDurationMs) {
       logTaskError('ImageTask', 'poll-timeout', { id, taskId, error: 'Polling exceeded 10 minutes' })
       db.update(schema.imageGenerations)
