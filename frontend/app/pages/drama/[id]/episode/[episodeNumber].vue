@@ -202,9 +202,10 @@
             </div>
             <div class="empty-title">从剧本提取角色与场景</div>
             <div class="empty-desc">AI 自动分析剧本，提取角色信息和场景列表，与项目已有数据智能去重合并</div>
-            <button class="btn btn-primary" @click="doExtract">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-              开始提取
+            <button class="btn btn-primary" @click="doExtract" :disabled="rn">
+              <Loader2 v-if="rn && rt === 'extractor'" :size="13" class="animate-spin" />
+              <svg v-else width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+              {{ rn && rt === 'extractor' ? '提取中…' : '开始提取' }}
             </button>
           </div>
           <div v-else-if="rn && rt === 'extractor'" class="step-loading">
@@ -308,9 +309,26 @@
               AI 自动分配
             </button>
           </div>
-          <div v-else-if="rn && rt === 'voice_assigner'" class="step-loading">
-            <Loader2 :size="24" class="animate-spin" style="color:var(--accent)" />
-            <div class="loading-text">正在分配音色...</div>
+          <div v-else-if="(rn && rt === 'voice_assigner') || (agentStatus.type === 'voice_assigner' && agentStatus.phase === 'error')" class="step-loading agent-status-panel">
+            <div class="agent-status-card" :class="agentStatus.phase">
+              <div class="agent-status-top">
+                <Loader2 v-if="rn && rt === 'voice_assigner'" :size="22" class="animate-spin" style="color:var(--accent)" />
+                <div v-else class="agent-status-icon err">!</div>
+                <div class="agent-status-copy">
+                  <div class="loading-text">{{ agentStatus.message || '正在分配音色...' }}</div>
+                  <div class="agent-status-detail">{{ agentStatus.detail || '请稍候' }}</div>
+                </div>
+                <div class="agent-status-elapsed">{{ formatElapsed(agentStatus.elapsedMs || 0) }}</div>
+              </div>
+              <div class="agent-progress">
+                <div class="agent-progress-bar" :style="{ width: agentProgressPct + '%' }"></div>
+              </div>
+              <div class="agent-status-meta">
+                <span>{{ rn && rt === 'voice_assigner' ? '进行中' : '已失败' }} · {{ agentProgressPct }}%</span>
+                <button v-if="agentStatus.phase === 'error'" class="btn btn-sm btn-primary" @click="doVoice">重试分配</button>
+              </div>
+              <div v-if="agentStatus.phase === 'error'" class="agent-status-error">{{ agentStatus.error }}</div>
+            </div>
           </div>
           <div v-else class="voice-stage">
             <aside class="card voice-stage-panel">
@@ -679,9 +697,26 @@
             </div>
           </div>
 
-          <div v-else-if="rn && rt === 'storyboard_breaker'" class="step-loading">
-            <Loader2 :size="24" class="animate-spin" style="color:var(--accent)" />
-            <div class="loading-text">正在拆解分镜并生成提示词...</div>
+          <div v-else-if="(rn && rt === 'storyboard_breaker') || (agentStatus.type === 'storyboard_breaker' && agentStatus.phase === 'error')" class="step-loading agent-status-panel">
+            <div class="agent-status-card" :class="agentStatus.phase">
+              <div class="agent-status-top">
+                <Loader2 v-if="rn && rt === 'storyboard_breaker'" :size="22" class="animate-spin" style="color:var(--accent)" />
+                <div v-else class="agent-status-icon err">!</div>
+                <div class="agent-status-copy">
+                  <div class="loading-text">{{ agentStatus.message || '正在拆解分镜并生成提示词...' }}</div>
+                  <div class="agent-status-detail">{{ agentStatus.detail || '请稍候' }}</div>
+                </div>
+                <div class="agent-status-elapsed">{{ formatElapsed(agentStatus.elapsedMs || 0) }}</div>
+              </div>
+              <div class="agent-progress">
+                <div class="agent-progress-bar" :style="{ width: agentProgressPct + '%' }"></div>
+              </div>
+              <div class="agent-status-meta">
+                <span>{{ rn && rt === 'storyboard_breaker' ? '进行中' : '已失败' }} · {{ agentProgressPct }}%</span>
+                <button v-if="agentStatus.phase === 'error'" class="btn btn-sm btn-primary" @click="doBreakdown">重试拆解</button>
+              </div>
+              <div v-if="agentStatus.phase === 'error'" class="agent-status-error">{{ agentStatus.error }}</div>
+            </div>
           </div>
 
           <div v-else class="step-empty">
@@ -1452,7 +1487,13 @@ const episodeNumber = Number(route.params.episodeNumber)
 
 const drama = ref(null), episode = ref(null), chars = ref([]), scenes = ref([]), sbs = ref([]), mergeData = ref(null)
 const panel = ref('script')
-const { running: rn, runningType: rt, run: runAgent } = useAgent()
+const { running: rn, runningType: rt, status: agentStatus, run: runAgent, formatElapsed } = useAgent()
+const agentProgressPct = computed(() => {
+  if (!rn.value) return agentStatus.value.phase === 'success' ? 100 : (agentStatus.value.phase === 'error' ? 100 : 0)
+  // 假进度：90 秒内爬到 90%，避免假完成
+  const ms = agentStatus.value.elapsedMs || 0
+  return Math.min(90, Math.round((ms / 90000) * 90))
+})
 
 const localRaw = ref(''), localScript = ref('')
 const rawContent = computed(() => episode.value?.content || '')
@@ -3296,7 +3337,81 @@ onMounted(() => { refresh(); loadConfigs(); loadVoices() })
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   flex: 1; gap: 12px;
 }
-.loading-text { font-size: 13px; color: var(--text-2); }
+.loading-text { font-size: 14px; font-weight: 600; color: var(--text-1); }
+.agent-status-panel { padding: 24px 16px; }
+.agent-status-card {
+  width: min(520px, 100%);
+  border-radius: 18px;
+  border: 1px solid rgba(19, 51, 121, 0.10);
+  background: linear-gradient(180deg, rgba(255,255,255,0.92), rgba(246,249,255,0.88));
+  box-shadow: 0 12px 40px rgba(19, 51, 121, 0.08);
+  padding: 18px 18px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.agent-status-card.error {
+  border-color: rgba(239, 83, 80, 0.28);
+  background: linear-gradient(180deg, rgba(255,248,248,0.96), rgba(255,242,242,0.9));
+}
+.agent-status-top {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+.agent-status-icon.err {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #ef5350;
+  color: #fff;
+  display: grid;
+  place-items: center;
+  font-size: 13px;
+  font-weight: 700;
+  flex: 0 0 auto;
+}
+.agent-status-copy { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.agent-status-detail { font-size: 12px; color: var(--text-2); line-height: 1.55; }
+.agent-status-elapsed {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.agent-progress {
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(19, 51, 121, 0.08);
+  overflow: hidden;
+}
+.agent-progress-bar {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #4f7cff, #7aa2ff);
+  transition: width .4s ease;
+}
+.agent-status-card.error .agent-progress-bar {
+  background: linear-gradient(90deg, #ef5350, #ff8a80);
+}
+.agent-status-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--text-3);
+}
+.agent-status-error {
+  font-size: 12px;
+  line-height: 1.55;
+  color: #c62828;
+  background: rgba(239, 83, 80, 0.08);
+  border-radius: 10px;
+  padding: 8px 10px;
+  word-break: break-word;
+}
 
 /* Step Navigator Bubble */
 .step-bubble {

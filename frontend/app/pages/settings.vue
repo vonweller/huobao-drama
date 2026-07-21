@@ -468,9 +468,11 @@ const endpointPrefixes = {
 
 const endpointHint = computed(() => {
   const provider = cfgForm.provider
-  const base = cfgForm.base_url || 'https://...'
+  const base = (cfgForm.base_url || 'https://...').replace(/\/+$/, '')
   const prefix = endpointPrefixes[provider] || ''
   if (!provider) return '选择服务商后显示推荐端点前缀'
+  // Base 已包含前缀时不再重复拼接，避免显示 /v1/v1
+  if (prefix && (base.endsWith(prefix) || base.includes(`${prefix}/`))) return base
   return `${base}${prefix}`
 })
 

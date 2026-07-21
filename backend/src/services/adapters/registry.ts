@@ -5,6 +5,7 @@
 import { MiniMaxImageAdapter } from './minimax-image'
 import { MiniMaxVideoAdapter } from './minimax-video'
 import { MiniMaxTTSAdapter } from './minimax-tts'
+import { EdgeTTSAdapter } from './edge-tts'
 import { OpenAIImageAdapter } from './openai-image'
 import { GeminiImageAdapter } from './gemini-image'
 import { VolcEngineImageAdapter } from './volcengine-image'
@@ -12,6 +13,8 @@ import { VolcEngineVideoAdapter } from './volcengine-video'
 import { ViduVideoAdapter } from './vidu-video'
 import { AliImageAdapter } from './ali-image'
 import { AliVideoAdapter } from './ali-video'
+import { BerniniImageAdapter } from './bernini-image'
+import { BerniniVideoAdapter } from './bernini-video'
 import type { ImageProviderAdapter, VideoProviderAdapter, TTSProviderAdapter } from './types'
 
 // 图片 Adapter 注册表
@@ -23,6 +26,8 @@ export const imageAdapters: Record<string, ImageProviderAdapter> = {
   ali: new AliImageAdapter(),
   // Chatfire - 待确认 API 格式，暂用 OpenAI
   chatfire: new OpenAIImageAdapter(),
+  // 本地 Bernini-R-1.3B
+  bernini: new BerniniImageAdapter(),
 }
 
 // 视频 Adapter 注册表
@@ -31,16 +36,23 @@ export const videoAdapters: Record<string, VideoProviderAdapter> = {
   volcengine: new VolcEngineVideoAdapter(),
   vidu: new ViduVideoAdapter(),
   ali: new AliVideoAdapter(),
+  // 本地 Bernini-R-1.3B
+  bernini: new BerniniVideoAdapter(),
   // Chatfire 视频 - 待确认 API 格式
 }
 
 // TTS Adapter 注册表
 export const ttsAdapters: Record<string, TTSProviderAdapter> = {
   minimax: new MiniMaxTTSAdapter(),
+  // 本地 edge-tts（免费，无需 API Key）
+  'edge-tts': new EdgeTTSAdapter(),
+  edgetts: new EdgeTTSAdapter(),
+  edge: new EdgeTTSAdapter(),
 }
 
 export function getTTSAdapter(provider: string): TTSProviderAdapter {
-  return ttsAdapters[provider.toLowerCase()] || ttsAdapters['minimax']
+  const key = provider.toLowerCase()
+  return ttsAdapters[key] || ttsAdapters['edge-tts'] || ttsAdapters['minimax']
 }
 
 /**

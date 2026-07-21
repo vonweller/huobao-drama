@@ -29,47 +29,53 @@ app.get('/', async (c) => {
   return success(c, parsed)
 })
 
-// POST /ai-voices/sync
+// POST /ai-voices/sync?provider=edge-tts|minimax
 app.post('/sync', async (c) => {
-  // 从数据库获取 minimax 的音频配置
+  const provider = (c.req.query('provider') || 'edge-tts').toLowerCase()
+
+  // 从数据库获取音频配置；edge-tts 允许无库配置（默认本地）
   const rows = db.select().from(schema.aiServiceConfigs)
     .where(eq(schema.aiServiceConfigs.serviceType, 'audio'))
     .all()
-    .filter(r => r.isActive && r.provider === 'minimax')
+    .filter(r => r.isActive && r.provider.toLowerCase() === provider)
 
-  if (rows.length === 0) {
-    return badRequest(c, 'No active minimax audio config found')
+  const config = rows[0] || {
+    provider,
+    baseUrl: provider === 'edge-tts' || provider === 'edge' || provider === 'edgetts'
+      ? 'http://127.0.0.1:8791'
+      : '',
+    apiKey: 'local',
   }
 
-  const config = rows[0]
-  if (!config.apiKey) {
+  if (provider === 'minimax' && !config.apiKey) {
     return badRequest(c, 'MiniMax API key not configured')
   }
 
-  // 调用 MiniMax get_voice API
+  // 调用 get_voice API（edge-tts / minimax 兼容）
   const resp = await fetch(joinProviderUrl(config.baseUrl, '/v1', '/get_voice'), {
     method: 'POST',
     headers: {
-      'Authorization': `Bearer ${config.apiKey}`,
+      'Authorization': `Bearer ${config.apiKey || 'local'}`,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({ voice_type: 'all' }),
   })
 
   if (!resp.ok) {
-    return badRequest(c, `MiniMax API error: ${resp.status}`)
+    return badRequest(c, `Voice API error (${provider}): ${resp.status}`)
   }
 
   const result = await resp.json() as any
-  if (result.base_resp?.status_code !== 0) {
+  if (result.base_resp && result.base_resp.status_code !== 0) {
     return badRequest(c, result.base_resp?.status_msg || 'Failed to fetch voices')
   }
 
   const voices = (result.system_voice || []).filter((v: any) => shouldKeepVoice(v))
   const ts = now()
+  const providerName = provider === 'edge' || provider === 'edgetts' ? 'edge-tts' : provider
 
-  // 先清空旧数据
-  db.delete(schema.aiVoices).where(eq(schema.aiVoices.provider, 'minimax')).run()
+  // 先清空该 provider 旧数据
+  db.delete(schema.aiVoices).where(eq(schema.aiVoices.provider, providerName)).run()
 
   // 批量插入新数据
   const insertRows = voices.map((v: any) => ({
@@ -77,7 +83,7 @@ app.post('/sync', async (c) => {
     voiceName: v.voice_name,
     description: JSON.stringify(v.description || []),
     language: extractLanguage(v.voice_id, v.voice_name),
-    provider: 'minimax',
+    provider: providerName,
     createdAt: ts,
   }))
 
@@ -93,23 +99,31 @@ app.post('/sync', async (c) => {
  */
 function extractLanguage(voiceId: string, voiceName: string): string {
   const text = `${voiceId} ${voiceName}`.toLowerCase()
-  if (text.includes('cantonese') || text.includes('粤')) return '粤语'
-  if (text.includes('english') || text.includes('aussie')) return '英语'
-  if (text.includes('japanese') || text.includes('日语')) return '日语'
-  if (text.includes('korean') || text.includes('韩')) return '韩语'
-  if (text.includes('spanish')) return '西班牙语'
-  if (text.includes('portuguese')) return '葡萄牙语'
-  if (text.includes('french')) return '法语'
-  if (text.includes('indonesian')) return '印尼语'
-  if (text.includes('german')) return '德语'
-  if (text.includes('russian')) return '俄语'
-  if (text.includes('italian')) return '意大利语'
-  if (text.includes('arabic')) return '阿拉伯语'
-  if (text.includes('turkish')) return '土耳其语'
-  if (text.includes('ukrainian')) return '乌克兰语'
-  if (text.includes('dutch')) return '荷兰语'
-  if (text.includes('vietnamese')) return '越南语'
-  if (text.includes('chinese') || text.includes('mandarin') || text.includes('中文')) return '中文'
+  if (text.includes('cantonese') || text.includes('粤') || text.includes('zh-hk')) return '粤语'
+  if (text.includes('english') || text.includes('aussie') || text.startsWith('en-')) return '英语'
+  if (text.includes('japanese') || text.includes('日语') || text.startsWith('ja-')) return '日语'
+  if (text.includes('korean') || text.includes('韩') || text.startsWith('ko-')) return '韩语'
+  if (text.includes('spanish') || text.startsWith('es-')) return '西班牙语'
+  if (text.includes('portuguese') || text.startsWith('pt-')) return '葡萄牙语'
+  if (text.includes('french') || text.startsWith('fr-')) return '法语'
+  if (text.includes('indonesian') || text.startsWith('id-')) return '印尼语'
+  if (text.includes('german') || text.startsWith('de-')) return '德语'
+  if (text.includes('russian') || text.startsWith('ru-')) return '俄语'
+  if (text.includes('italian') || text.startsWith('it-')) return '意大利语'
+  if (text.includes('arabic') || text.startsWith('ar-')) return '阿拉伯语'
+  if (text.includes('turkish') || text.startsWith('tr-')) return '土耳其语'
+  if (text.includes('ukrainian') || text.startsWith('uk-')) return '乌克兰语'
+  if (text.includes('dutch') || text.startsWith('nl-')) return '荷兰语'
+  if (text.includes('vietnamese') || text.startsWith('vi-')) return '越南语'
+  // edge-tts 中文：zh-CN / zh-TW / zh- 前缀
+  if (
+    text.includes('chinese')
+    || text.includes('mandarin')
+    || text.includes('中文')
+    || text.includes('zh-cn')
+    || text.includes('zh-tw')
+    || text.startsWith('zh-')
+  ) return '中文'
   return '其他'
 }
 

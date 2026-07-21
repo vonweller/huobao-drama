@@ -60,6 +60,20 @@ function buildProbe(serviceType: string, provider: string, baseUrl: string, mode
   }
 
   if (p === 'openai' || p === 'openrouter' || p === 'chatfire') {
+    // 文本服务优先测 chat/completions（更接近真实 Agent 调用）
+    // 若未给模型名，则回退 /models 列表探测
+    if (serviceType === 'text' && m) {
+      return {
+        method: 'POST',
+        url: joinProviderUrl(baseUrl, '/v1', '/chat/completions'),
+        headers: bearerHeaders(apiKey, true),
+        body: {
+          model: m,
+          messages: [{ role: 'user', content: 'ping' }],
+          max_tokens: 8,
+        },
+      }
+    }
     return {
       method: 'GET',
       url: joinProviderUrl(baseUrl, '/v1', '/models'),
@@ -272,17 +286,24 @@ app.post('/test', async (c) => {
       body: probe.body ? JSON.stringify(probe.body) : undefined,
     })
     const text = await resp.text()
+    // 502/503 对文本 chat 探测视为不可用（常见：中转列表正常但上游对话失败）
     const reachable = [200, 204, 400, 401, 403].includes(resp.status)
+    let message = reachable
+      ? (resp.ok ? '端点可访问，认证与路径基本正常' : '端点已响应，请根据状态码判断认证或路径是否正确')
+      : '端点未按预期响应，请检查 Base URL 和代理前缀'
+    if (probe.method === 'POST' && resp.ok) {
+      message = '对话接口可用（chat/completions 已返回成功）'
+    } else if (probe.method === 'POST' && (resp.status === 502 || resp.status === 503)) {
+      message = '列表可能正常，但对话上游失败（502/503）。Agent 提取会失败，请检查中转上游或换模型。'
+    }
     const payload = {
       ok: resp.ok,
-      reachable,
+      reachable: probe.method === 'POST' ? resp.ok : reachable,
       status: resp.status,
       status_text: resp.statusText,
       method: probe.method,
       url: probeUrl,
-      message: reachable
-        ? (resp.ok ? '端点可访问，认证与路径基本正常' : '端点已响应，请根据状态码判断认证或路径是否正确')
-        : '端点未按预期响应，请检查 Base URL 和代理前缀',
+      message,
       response_preview: text.slice(0, 240),
     }
     if (reachable) {
