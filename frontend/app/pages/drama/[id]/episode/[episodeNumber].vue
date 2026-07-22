@@ -821,7 +821,7 @@
                   <div v-else class="asset-cover-empty">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
                     <div v-if="getCharImageState(c).running" class="card-progress-overlay">
-                      <div class="card-progress-ring">{{ getCharImageState(c).progress }}%</div>
+                      <div class="card-progress-ring" :class="{ indeterminate: getCharImageState(c).indeterminate }">{{ getCharImageState(c).showPercent ? (getCharImageState(c).progress + '%') : '…' }}</div>
                       <div class="card-progress-msg">{{ getCharImageState(c).label }}</div>
                     </div>
                   </div>
@@ -831,7 +831,7 @@
                   <div class="asset-name">{{ c.name }}</div>
                   <div class="asset-meta dim">{{ c.role || '角色' }}</div>
                   <div v-if="getCharImageState(c).running || getCharImageState(c).failed" class="card-mini-progress">
-                    <div class="card-mini-bar"><div class="card-mini-fill" :class="{ fail: getCharImageState(c).failed }" :style="{ width: getCharImageState(c).progress + '%' }"></div></div>
+                    <div class="card-mini-bar"><div class="card-mini-fill" :class="{ fail: getCharImageState(c).failed, indeterminate: getCharImageState(c).indeterminate }" :style="{ width: (getCharImageState(c).indeterminate ? 40 : getCharImageState(c).progress) + '%' }"></div></div>
                     <div class="card-mini-text">{{ getCharImageState(c).detail }}</div>
                   </div>
                 </div>
@@ -839,7 +839,7 @@
                   <span :class="['dot', getCharImageState(c).dotClass]" />
                   <span class="dim" style="font-size:10px">{{ getCharImageState(c).statusText }}</span>
                   <button class="btn btn-sm ml-auto" :disabled="getCharImageState(c).running" @click="genCharImg(c.id)">
-                    {{ getCharImageState(c).running ? (getCharImageState(c).progress + '%') : (getCharImageState(c).failed ? '重试' : ((c.image_url || c.imageUrl) ? '重新生成' : '生成')) }}
+                    {{ formatJobButtonText(getCharImageState(c), '生成', '重试', '重新生成', !!(c.image_url || c.imageUrl)) }}
                   </button>
                 </div>
               </div>
@@ -877,13 +877,13 @@
                   <div class="asset-meta dim">{{ s.time || '—' }}</div>
                 </div>
                 <div v-if="getSceneImageState(s).running || getSceneImageState(s).failed" class="card-mini-progress" style="padding:0 10px 6px">
-                  <div class="card-mini-bar"><div class="card-mini-fill" :class="{ fail: getSceneImageState(s).failed }" :style="{ width: getSceneImageState(s).progress + '%' }"></div></div>
+                  <div class="card-mini-bar"><div class="card-mini-fill" :class="{ fail: getSceneImageState(s).failed, indeterminate: getSceneImageState(s).indeterminate }" :style="{ width: (getSceneImageState(s).indeterminate ? 40 : getSceneImageState(s).progress) + '%' }"></div></div>
                   <div class="card-mini-text">{{ getSceneImageState(s).detail || getSceneImageState(s).label }}</div>
                 </div>
                 <div class="asset-foot">
                   <span :class="['dot', getSceneImageState(s).dotClass]" />
                   <span class="dim" style="font-size:10px">{{ getSceneImageState(s).statusText }}</span>
-                  <button class="btn btn-sm ml-auto" :disabled="getSceneImageState(s).running" @click="genSceneImg(s.id)">{{ getSceneImageState(s).running ? (getSceneImageState(s).progress + '%') : (getSceneImageState(s).failed ? '重试' : ((s.image_url || s.imageUrl) ? '重新生成' : '生成')) }}</button>
+                  <button class="btn btn-sm ml-auto" :disabled="getSceneImageState(s).running" @click="genSceneImg(s.id)">{{ formatJobButtonText(getSceneImageState(s), '生成', '重试', '重新生成', !!(s.image_url || s.imageUrl)) }}</button>
                 </div>
               </div>
             </div>
@@ -929,15 +929,15 @@
                   <span class="dim">{{ sb.location || '未设地点' }}</span>
                 </div>
                 <div class="card-mini-progress">
-                  <div class="card-mini-bar"><div class="card-mini-fill" :class="{ fail: getDubState(sb).failed, idle: !getDubState(sb).running && !getDubState(sb).failed && !hasTTS(sb) }" :style="{ width: (hasTTS(sb) ? 100 : getDubState(sb).progress) + '%' }"></div></div>
+                  <div class="card-mini-bar"><div class="card-mini-fill" :class="{ fail: getDubState(sb).failed, idle: !getDubState(sb).running && !getDubState(sb).failed && !hasTTS(sb), indeterminate: getDubState(sb).indeterminate }" :style="{ width: (hasTTS(sb) ? 100 : (getDubState(sb).indeterminate ? 40 : getDubState(sb).progress)) + '%' }"></div></div>
                   <div class="card-mini-text">{{ hasTTS(sb) ? '配音已生成' : (getDubState(sb).detail || getDubState(sb).label || '点击右侧生成配音') }}</div>
                 </div>
                 <div class="dub-foot">
                   <audio v-if="hasTTS(sb)" :src="'/' + getTTSUrl(sb)" controls preload="none" class="dub-audio" />
-                  <div v-else class="dim" style="font-size:12px">{{ getDubState(sb).running ? ('生成中 ' + getDubState(sb).progress + '%') : '尚未生成语音文件' }}</div>
+                  <div v-else class="dim" style="font-size:12px">{{ getDubState(sb).running ? getDubState(sb).statusText : '尚未生成语音文件' }}</div>
                   <button class="btn btn-sm ml-auto" :disabled="getDubState(sb).running" @click="genShotTTS(sb)">
                     <Loader2 v-if="getDubState(sb).running" :size="11" class="animate-spin" />
-                    {{ getDubState(sb).running ? ('生成中 ' + getDubState(sb).progress + '%') : (getDubState(sb).failed ? '重试配音' : (hasTTS(sb) ? '重新生成' : '生成配音')) }}
+                    {{ formatJobButtonText(getDubState(sb), '生成配音', '重试配音', '重新生成', hasTTS(sb)) }}
                   </button>
                 </div>
               </div>
@@ -1307,12 +1307,12 @@
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
                   </div>
                   <div v-if="getVideoJobState(sb).running" class="prod-progress-overlay">
-                    <div class="frame-progress-ring big">{{ getVideoJobState(sb).progress }}%</div>
+                    <div class="frame-progress-ring big" :class="{ indeterminate: getVideoJobState(sb).indeterminate }">{{ getVideoJobState(sb).showPercent ? (getVideoJobState(sb).progress + '%') : '…' }}</div>
                     <div class="card-progress-msg">{{ getVideoJobState(sb).label }}</div>
                   </div>
                   <span class="prod-idx">#{{ String(i+1).padStart(2,'0') }}</span>
                   <span v-if="hasComposed(sb)" class="prod-overlay-badge">已合成</span>
-                  <span v-else-if="getVideoJobState(sb).running" class="prod-overlay-badge is-pending-badge">{{ getVideoJobState(sb).progress }}%</span>
+                  <span v-else-if="getVideoJobState(sb).running" class="prod-overlay-badge is-pending-badge">{{ getVideoJobState(sb).showPercent ? (getVideoJobState(sb).progress + '%') : '进行中' }}</span>
                 </div>
                 <div class="prod-info">
                   <div class="prod-desc truncate">{{ sb.description || sb.title || '—' }}</div>
@@ -1322,7 +1322,7 @@
                     <span :class="['dot', getVideoJobState(sb).dotClass]" /><span style="font-size:10px">{{ getVideoJobState(sb).statusText }}</span>
                   </div>
                   <div class="card-mini-progress">
-                    <div class="card-mini-bar"><div class="card-mini-fill" :class="{ fail: getVideoJobState(sb).failed, idle: !getVideoJobState(sb).running && !getVideoJobState(sb).failed && !hasVid(sb) }" :style="{ width: (hasVid(sb) ? 100 : getVideoJobState(sb).progress) + '%' }"></div></div>
+                    <div class="card-mini-bar"><div class="card-mini-fill" :class="{ fail: getVideoJobState(sb).failed, idle: !getVideoJobState(sb).running && !getVideoJobState(sb).failed && !hasVid(sb), indeterminate: getVideoJobState(sb).indeterminate }" :style="{ width: (hasVid(sb) ? 100 : (getVideoJobState(sb).indeterminate ? 40 : getVideoJobState(sb).progress)) + '%' }"></div></div>
                     <div class="card-mini-text">{{ hasVid(sb) ? '视频已生成' : (getVideoJobState(sb).detail || getVideoJobState(sb).label || '点击下方开始生成') }}</div>
                   </div>
                   <div v-if="videoFailMessage(sb.id)" class="prod-error">{{ videoFailMessage(sb.id) }}</div>
@@ -1331,7 +1331,7 @@
                   <button class="btn btn-sm" :disabled="getVideoJobState(sb).running" @click="genVid(sb)">
                     <Loader2 v-if="getVideoJobState(sb).running" :size="11" class="animate-spin" />
                     <svg v-else width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
-                    {{ getVideoJobState(sb).running ? ('生成中 ' + getVideoJobState(sb).progress + '%') : (getVideoJobState(sb).failed ? '重试视频' : (hasVid(sb) ? '重新生成' : '生成视频')) }}
+                    {{ formatJobButtonText(getVideoJobState(sb), '生成视频', '重试视频', '重新生成', hasVid(sb)) }}
                   </button>
                 </div>
               </div>
@@ -1379,12 +1379,12 @@
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
                   </div>
                   <div v-if="getComposeJobState(sb).running" class="prod-progress-overlay">
-                    <div class="frame-progress-ring big">{{ getComposeJobState(sb).progress }}%</div>
+                    <div class="frame-progress-ring big" :class="{ indeterminate: getComposeJobState(sb).indeterminate }">{{ getComposeJobState(sb).showPercent ? (getComposeJobState(sb).progress + '%') : '…' }}</div>
                     <div class="card-progress-msg">{{ getComposeJobState(sb).label }}</div>
                   </div>
                   <span class="prod-idx">#{{ String(i+1).padStart(2,'0') }}</span>
                   <span v-if="hasComposed(sb)" class="prod-overlay-badge">已合成</span>
-                  <span v-else-if="getComposeJobState(sb).running" class="prod-overlay-badge is-pending-badge">{{ getComposeJobState(sb).progress }}%</span>
+                  <span v-else-if="getComposeJobState(sb).running" class="prod-overlay-badge is-pending-badge">{{ getComposeJobState(sb).showPercent ? (getComposeJobState(sb).progress + '%') : '进行中' }}</span>
                 </div>
                 <div class="prod-info">
                   <div class="prod-desc truncate">{{ sb.description || sb.title || '—' }}</div>
@@ -1395,7 +1395,7 @@
                     <span :class="['dot', getComposeJobState(sb).dotClass]" /><span style="font-size:10px">{{ getComposeJobState(sb).statusText }}</span>
                   </div>
                   <div class="card-mini-progress">
-                    <div class="card-mini-bar"><div class="card-mini-fill" :class="{ fail: getComposeJobState(sb).failed, idle: !getComposeJobState(sb).running && !getComposeJobState(sb).failed && !hasComposed(sb) }" :style="{ width: (hasComposed(sb) ? 100 : getComposeJobState(sb).progress) + '%' }"></div></div>
+                    <div class="card-mini-bar"><div class="card-mini-fill" :class="{ fail: getComposeJobState(sb).failed, idle: !getComposeJobState(sb).running && !getComposeJobState(sb).failed && !hasComposed(sb), indeterminate: getComposeJobState(sb).indeterminate }" :style="{ width: (hasComposed(sb) ? 100 : (getComposeJobState(sb).indeterminate ? 40 : getComposeJobState(sb).progress)) + '%' }"></div></div>
                     <div class="card-mini-text">{{ hasComposed(sb) ? '合成已完成' : (getComposeJobState(sb).detail || getComposeJobState(sb).label || (!hasVid(sb) ? '请先生成视频' : '点击下方开始合成')) }}</div>
                   </div>
                   <div v-if="composeFailMessage(sb.id)" class="prod-error">{{ composeFailMessage(sb.id) }}</div>
@@ -1404,7 +1404,7 @@
                   <button class="btn btn-sm" :disabled="!hasVid(sb) || getComposeJobState(sb).running" @click="doCompose(sb)">
                     <Loader2 v-if="getComposeJobState(sb).running" :size="11" class="animate-spin" />
                     <svg v-else width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
-                    {{ getComposeJobState(sb).running ? ('合成中 ' + getComposeJobState(sb).progress + '%') : (getComposeJobState(sb).failed ? '重试合成' : (hasComposed(sb) ? '重新合成' : '开始合成')) }}
+                    {{ formatJobButtonText(getComposeJobState(sb), '开始合成', '重试合成', '重新合成', hasComposed(sb)) }}
                   </button>
                 </div>
               </div>
@@ -1641,42 +1641,94 @@ function isPendingCharImage(id) {
 
 const charImgReadyCount = computed(() => visualChars.value.filter(c => !!(c.image_url || c.imageUrl)).length)
 
-/** 根据任务阶段估算真实进度（不是假死 12%） */
-function estimateJobProgress(job) {
-  if (!job) return { progress: 0, label: '待生成', detail: '' }
-  const st = String(job.status || '')
-  if (st === 'completed') return { progress: 100, label: '完成', detail: '已完成' }
-  if (st === 'failed' || st === 'lost') return { progress: 100, label: '失败', detail: (job.error || '生成失败').slice(0, 48) }
+/** 格式化已用时（任务进度专用） */
+function formatJobElapsed(sec) {
+  const s = Math.max(0, Math.floor(sec || 0))
+  const m = Math.floor(s / 60)
+  const r = s % 60
+  return m > 0 ? (m + '分' + r + '秒') : (r + '秒')
+}
 
+/**
+ * 任务进度显示（兼容本地/云端）
+ * - 本地（Bernini 等有队列/百分比）：显示排队位次 + 百分比
+ * - 云端（通常不返回进度）：只显示“进行中 · 已用时”，不报错
+ */
+function estimateJobProgress(job, opts = {}) {
+  if (!job) return { progress: 0, label: '待生成', detail: '', statusText: '待生成', showPercent: false, indeterminate: false }
+  const st = String(job.status || '')
+  const hasRealProgress = !!opts.hasRealProgress
+  if (st === 'completed') {
+    return { progress: 100, label: '完成', detail: '已完成', statusText: '已生成', showPercent: true, indeterminate: false }
+  }
+  if (st === 'failed' || st === 'lost') {
+    return { progress: 100, label: '失败', detail: (job.error || '生成失败').slice(0, 48), statusText: '失败', showPercent: false, indeterminate: false }
+  }
+
+  const started = Number(job.startedAt || job.updatedAt || Date.now())
+  const elapsedSec = Math.max(0, (Date.now() - started) / 1000)
+  const timeText = formatJobElapsed(elapsedSec)
   let progress = Number(job.progress)
   if (!Number.isFinite(progress) || progress <= 0) progress = 0
 
   if (st === 'queued' || st === 'pending') {
     const pos = Number(job.queuePosition || job.queue_position || 0)
-    if (pos > 0) progress = Math.max(progress, Math.min(30, 34 - Math.min(pos, 7) * 4))
-    else progress = Math.max(progress, 8)
-    const label = pos > 0 ? ('排队第 ' + pos + ' 位') : '排队中'
+    if (hasRealProgress || pos > 0) {
+      if (pos > 0) progress = Math.max(progress, Math.min(30, 34 - Math.min(pos, 7) * 4))
+      else progress = Math.max(progress, 8)
+      const label = pos > 0 ? ('排队第 ' + pos + ' 位') : '排队中'
+      return {
+        progress: Math.max(5, Math.min(30, Math.round(progress))),
+        label,
+        detail: pos > 0 ? ('前方约 ' + Math.max(0, pos - 1) + ' 个 · 等待执行') : (job.message || '等待队列'),
+        statusText: label,
+        showPercent: true,
+        indeterminate: false,
+      }
+    }
     return {
-      progress: Math.max(5, Math.min(30, Math.round(progress))),
-      label,
-      detail: pos > 0 ? ('前方约 ' + Math.max(0, pos - 1) + ' 个 · 等待执行') : (job.message || '等待队列'),
+      progress: 15,
+      label: '提交中',
+      detail: '已用时 ' + timeText,
+      statusText: '进行中 ' + timeText,
+      showPercent: false,
+      indeterminate: true,
     }
   }
 
-  // processing: 35%~98%，只有 completed 才到 100，避免假卡 92%
-  const started = Number(job.startedAt || job.updatedAt || Date.now())
-  const elapsedSec = Math.max(0, (Date.now() - started) / 1000)
-  const timeProgress = 35 + Math.min(63, Math.floor(elapsedSec / 100 * 63))
-  progress = Math.max(progress, timeProgress, 35)
-  progress = Math.min(98, progress)
-  const mins = Math.floor(elapsedSec / 60)
-  const secs = Math.floor(elapsedSec % 60)
-  const timeText = mins > 0 ? (mins + '分' + secs + '秒') : (secs + '秒')
-  return {
-    progress: Math.round(progress),
-    label: '生成中',
-    detail: '执行中 · 已用时 ' + timeText,
+  // processing
+  if (hasRealProgress) {
+    const timeProgress = 35 + Math.min(63, Math.floor(elapsedSec / 100 * 63))
+    progress = Math.max(progress, timeProgress, 35)
+    progress = Math.min(98, progress)
+    return {
+      progress: Math.round(progress),
+      label: '生成中',
+      detail: '本地处理中 · 已用时 ' + timeText,
+      statusText: Math.round(progress) + '%',
+      showPercent: true,
+      indeterminate: false,
+    }
   }
+
+  // 云端/无进度：只显示已用时
+  return {
+    progress: 40,
+    label: '生成中',
+    detail: '处理中 · 已用时 ' + timeText + '（无进度回传）',
+    statusText: '进行中 ' + timeText,
+    showPercent: false,
+    indeterminate: true,
+  }
+}
+
+function jobHasRealProgress(job) {
+  if (!job) return false
+  if (job.mode === 'cloud' || job.provider === 'cloud') return false
+  if (job.hasRealProgress === false) return false
+  if (job.mode === 'local' || job.hasRealProgress === true) return true
+  if (job.queuePosition != null || job.queue_position != null) return true
+  try { return !!isLocalImageProvider.value } catch (e) { return false }
 }
 
 function getCharImageState(c) {
@@ -1684,37 +1736,42 @@ function getCharImageState(c) {
   const job = charImageJobs.value[c.id]
   if (hasImg && (!job || job.status === 'completed' || job.status === 'failed')) {
     return {
-      running: false, failed: false, progress: 100,
+      running: false, failed: false, progress: 100, showPercent: true, indeterminate: false,
       badge: '已生成', badgeClass: 'is-ready', statusText: '已生成',
       label: '完成', detail: '图片已就绪', dotClass: 'ok',
     }
   }
   if (job?.status === 'failed' && !hasImg) {
-    const est = estimateJobProgress(job)
+    const est = estimateJobProgress(job, { hasRealProgress: jobHasRealProgress(job) })
     return {
-      running: false, failed: true, progress: 100,
+      running: false, failed: true, progress: 100, showPercent: false, indeterminate: false,
       badge: '失败', badgeClass: 'is-fail', statusText: '失败',
       label: '失败', detail: est.detail, dotClass: 'fail',
     }
   }
   if (job && (job.status === 'processing' || job.status === 'queued' || job.status === 'pending')) {
-    const est = estimateJobProgress(job)
+    const est = estimateJobProgress(job, { hasRealProgress: jobHasRealProgress(job) })
     const isQueue = job.status === 'queued' || job.status === 'pending'
     return {
       running: true, failed: false, progress: est.progress,
+      showPercent: est.showPercent, indeterminate: est.indeterminate,
       badge: isQueue ? '排队中' : '生成中', badgeClass: 'is-pending',
-      statusText: est.progress + '%', label: est.label, detail: est.detail, dotClass: 'pending',
+      statusText: est.statusText, label: est.label, detail: est.detail, dotClass: 'pending',
     }
   }
   if (isPendingCharImage(c.id)) {
+    const cloud = !isLocalImageProvider.value
     return {
-      running: true, failed: false, progress: 8,
-      badge: '提交中', badgeClass: 'is-pending', statusText: '提交中',
-      label: '提交中', detail: '正在创建任务…', dotClass: 'pending',
+      running: true, failed: false, progress: cloud ? 20 : 8,
+      showPercent: !cloud, indeterminate: cloud,
+      badge: '提交中', badgeClass: 'is-pending',
+      statusText: cloud ? '进行中' : '提交中',
+      label: '提交中', detail: cloud ? '云端处理中（无进度回传）' : '正在创建任务…',
+      dotClass: 'pending',
     }
   }
   return {
-    running: false, failed: false, progress: 0,
+    running: false, failed: false, progress: 0, showPercent: false, indeterminate: false,
     badge: '待生成', badgeClass: '', statusText: '待生成',
     label: '待生成', detail: '', dotClass: '',
   }
@@ -2704,6 +2761,13 @@ const isLocalImageProvider = computed(() => {
   const label = String(lockedImageConfigLabel.value || cfg?.name || '').toLowerCase()
   return provider.includes('bernini') || label.includes('bernini') || label.includes('本地')
 })
+const isLocalVideoProvider = computed(() => {
+  const cfg = videoConfigs.value.find(c => c.id === lockedVideoConfigId.value)
+    || videoConfigs.value.filter(c => c.is_active !== false && c.isActive !== false)
+      .slice().sort((a, b) => Number(b.priority || 0) - Number(a.priority || 0))[0]
+  const provider = String(cfg?.provider || '').toLowerCase()
+  return provider.includes('bernini') || provider.includes('local')
+})
 const imageGenBusy = computed(() => pendingCharImageIds.value.length > 0 || imageGenTargetIds.value.length > 0)
 const imageGenDoneCount = computed(() => {
   const ids = imageGenTargetIds.value
@@ -3009,20 +3073,43 @@ async function syncComposeJobsFromServer() {
 function getGenericJobState(entityId, jobsMap, hasResult, isPending) {
   const job = jobsMap[entityId]
   if (hasResult && (!job || job.status === 'completed' || job.status === 'failed')) {
-    return { running: false, failed: false, progress: 100, badge: '已生成', badgeClass: 'is-ready', statusText: '已生成', label: '完成', detail: '已完成', dotClass: 'ok' }
+    return { running: false, failed: false, progress: 100, showPercent: true, indeterminate: false, badge: '已生成', badgeClass: 'is-ready', statusText: '已生成', label: '完成', detail: '已完成', dotClass: 'ok' }
   }
   if (job?.status === 'failed' && !hasResult) {
-    return { running: false, failed: true, progress: 100, badge: '失败', badgeClass: 'is-fail', statusText: '失败', label: '失败', detail: (job.error || '失败').slice(0, 40), dotClass: 'fail' }
+    return { running: false, failed: true, progress: 100, showPercent: false, indeterminate: false, badge: '失败', badgeClass: 'is-fail', statusText: '失败', label: '失败', detail: (job.error || '失败').slice(0, 40), dotClass: 'fail' }
   }
   if (job && (job.status === 'processing' || job.status === 'queued' || job.status === 'pending')) {
-    const est = estimateJobProgress(job)
+    const est = estimateJobProgress(job, { hasRealProgress: jobHasRealProgress(job) })
     const isQueue = job.status === 'queued' || job.status === 'pending'
-    return { running: true, failed: false, progress: est.progress, badge: isQueue ? '排队中' : '生成中', badgeClass: 'is-pending', statusText: est.progress + '%', label: est.label, detail: est.detail, dotClass: 'pending' }
+    return {
+      running: true, failed: false, progress: est.progress,
+      showPercent: est.showPercent, indeterminate: est.indeterminate,
+      badge: isQueue ? '排队中' : '生成中', badgeClass: 'is-pending',
+      statusText: est.statusText, label: est.label, detail: est.detail, dotClass: 'pending',
+    }
   }
   if (isPending) {
-    return { running: true, failed: false, progress: 10, badge: '生成中', badgeClass: 'is-pending', statusText: '生成中', label: '提交中', detail: '任务处理中…', dotClass: 'pending' }
+    const cloud = !isLocalImageProvider.value
+    return {
+      running: true, failed: false, progress: cloud ? 20 : 10,
+      showPercent: !cloud, indeterminate: cloud,
+      badge: '生成中', badgeClass: 'is-pending',
+      statusText: cloud ? '进行中' : '生成中',
+      label: '提交中', detail: cloud ? '云端处理中（无进度回传）' : '任务处理中…',
+      dotClass: 'pending',
+    }
   }
-  return { running: false, failed: false, progress: 0, badge: '待生成', badgeClass: '', statusText: '待生成', label: '待生成', detail: '', dotClass: '' }
+  return { running: false, failed: false, progress: 0, showPercent: false, indeterminate: false, badge: '待生成', badgeClass: '', statusText: '待生成', label: '待生成', detail: '', dotClass: '' }
+}
+
+function formatJobButtonText(state, idleText, retryText, redoText, hasResult) {
+  if (state.running) {
+    if (state.showPercent) return '生成中 ' + state.progress + '%'
+    return state.statusText || '进行中'
+  }
+  if (state.failed) return retryText
+  if (hasResult) return redoText
+  return idleText
 }
 
 function getSceneImageState(s) {
@@ -3031,13 +3118,19 @@ function getSceneImageState(s) {
 function getDubState(sb) {
   const has = hasTTS(sb)
   const job = ttsJobs.value[sb.id]
-  if (has) return { running: false, failed: false, progress: 100, badge: '已生成', badgeClass: 'is-ready', statusText: '已生成', label: '完成', detail: '配音已就绪', dotClass: 'ok' }
-  if (job?.status === 'failed') return { running: false, failed: true, progress: 100, badge: '失败', badgeClass: 'is-fail', statusText: '失败', label: '失败', detail: (job.error || '').slice(0, 40), dotClass: 'fail' }
+  // 配音通常无云端百分比：统一按“已用时”展示
+  if (has) return { running: false, failed: false, progress: 100, showPercent: true, indeterminate: false, badge: '已生成', badgeClass: 'is-ready', statusText: '已生成', label: '完成', detail: '配音已就绪', dotClass: 'ok' }
+  if (job?.status === 'failed') return { running: false, failed: true, progress: 100, showPercent: false, indeterminate: false, badge: '失败', badgeClass: 'is-fail', statusText: '失败', label: '失败', detail: (job.error || '').slice(0, 40), dotClass: 'fail' }
   if (job && (job.status === 'processing' || job.status === 'queued')) {
-    const est = estimateJobProgress(job)
-    return { running: true, failed: false, progress: est.progress, badge: '生成中', badgeClass: 'is-pending', statusText: est.progress + '%', label: est.label, detail: est.detail, dotClass: 'pending' }
+    const est = estimateJobProgress(job, { hasRealProgress: false }) // 配音默认无真实百分比
+    return {
+      running: true, failed: false, progress: est.progress,
+      showPercent: false, indeterminate: true,
+      badge: '生成中', badgeClass: 'is-pending',
+      statusText: est.statusText, label: est.label, detail: est.detail, dotClass: 'pending',
+    }
   }
-  return { running: false, failed: false, progress: 0, badge: '待生成', badgeClass: '', statusText: '待生成', label: '待生成', detail: '', dotClass: '' }
+  return { running: false, failed: false, progress: 0, showPercent: false, indeterminate: false, badge: '待生成', badgeClass: '', statusText: '待生成', label: '待生成', detail: '', dotClass: '' }
 }
 function getShotFrameState(sb, frameType) {
   const key = sb.id + ':' + frameType
@@ -3045,9 +3138,19 @@ function getShotFrameState(sb, frameType) {
   return getGenericJobState(key, shotFrameJobs.value, has, isPendingShotFrame(sb.id, frameType))
 }
 function getVideoJobState(sb) {
+  const job = videoJobs.value[sb.id]
+  if (job && !job.mode) {
+    job.mode = isLocalVideoProvider.value ? 'local' : 'cloud'
+    job.hasRealProgress = job.mode === 'local'
+  }
   return getGenericJobState(sb.id, videoJobs.value, hasVid(sb), isPendingVideo(sb.id))
 }
 function getComposeJobState(sb) {
+  const job = composeJobs.value[sb.id]
+  if (job) {
+    job.mode = 'local'
+    job.hasRealProgress = false
+  }
   return getGenericJobState(sb.id, composeJobs.value, hasComposed(sb), isPendingCompose(sb.id))
 }
 
@@ -3108,16 +3211,20 @@ async function genCharImg(id) {
     if (!isPendingCharImage(id)) pendingCharImageIds.value.push(id)
     imageGenTargetIds.value = [...new Set([...imageGenTargetIds.value, id])]
     imageGenStartedAt.value = Date.now()
+    const localImg = isLocalImageProvider.value
     charImageJobs.value = {
       ...charImageJobs.value,
       [id]: {
         genId: null,
         taskId: null,
         status: 'processing',
-        progress: 8,
+        progress: localImg ? 8 : 0,
         message: '提交任务…',
         error: null,
+        startedAt: Date.now(),
         updatedAt: Date.now(),
+        mode: localImg ? 'local' : 'cloud',
+        hasRealProgress: localImg,
       },
     }
     const res = await characterAPI.generateImage(id, epId.value)
@@ -3128,10 +3235,12 @@ async function genCharImg(id) {
         [id]: {
           ...(charImageJobs.value[id] || {}),
           genId,
-          status: 'queued',
-          progress: 12,
-          message: '已入队',
+          status: localImg ? 'queued' : 'processing',
+          progress: localImg ? 12 : 0,
+          message: localImg ? '已入队' : '云端处理中',
           updatedAt: Date.now(),
+          mode: localImg ? 'local' : 'cloud',
+          hasRealProgress: localImg,
         },
       }
     }
@@ -3435,7 +3544,18 @@ async function genVid(sb) {
   try {
     delete failedVideoMessages.value[sb.id]
     if (!isPendingVideo(sb.id)) pendingVideoIds.value.push(sb.id)
-    videoJobs.value = { ...videoJobs.value, [sb.id]: { status: 'processing', progress: 15, message: '视频生成中', startedAt: Date.now(), updatedAt: Date.now() } }
+    videoJobs.value = {
+      ...videoJobs.value,
+      [sb.id]: {
+        status: 'processing',
+        progress: isLocalVideoProvider.value ? 15 : 0,
+        message: '视频生成中',
+        startedAt: Date.now(),
+        updatedAt: Date.now(),
+        mode: isLocalVideoProvider.value ? 'local' : 'cloud',
+        hasRealProgress: isLocalVideoProvider.value,
+      },
+    }
     const generation = await videoAPI.generate(params)
     toast.success('视频已提交，看卡片进度')
     await refresh()
@@ -3448,17 +3568,23 @@ async function genVid(sb) {
   }
 }
 async function pollVideoGeneration(generationId, storyboardId) {
+  const local = isLocalVideoProvider.value
   const bump = (progress, message, status = 'processing') => {
     const prev = videoJobs.value[storyboardId] || {}
+    const nextProgress = local
+      ? Math.max(Number(prev.progress) || 0, progress)
+      : (status === 'completed' || status === 'failed' ? 100 : 0)
     videoJobs.value = {
       ...videoJobs.value,
       [storyboardId]: {
         ...prev,
         status,
-        progress: Math.max(Number(prev.progress) || 0, progress),
+        progress: nextProgress,
         message,
         startedAt: prev.startedAt || Date.now(),
         updatedAt: Date.now(),
+        mode: local ? 'local' : 'cloud',
+        hasRealProgress: !!local,
         error: status === 'failed' ? message : null,
       },
     }
@@ -4652,6 +4778,23 @@ onMounted(() => { refresh(); loadConfigs(); loadVoices() })
 .frame-progress-ring.big { min-width: 54px; height: 54px; font-size: 13px; }
 .prod-overlay-badge.is-pending-badge { background: #4f7cff; }
 .card-mini-fill.idle { background: rgba(19,51,121,0.12); }
+.card-mini-fill.indeterminate {
+  width: 40% !important;
+  animation: progress-slide 1.2s ease-in-out infinite;
+  background: linear-gradient(90deg, #7aa2ff, #4f7cff, #7aa2ff);
+  background-size: 200% 100%;
+}
+.frame-progress-ring.indeterminate {
+  animation: pulse-ring 1.2s ease-in-out infinite;
+}
+@keyframes progress-slide {
+  0% { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
+@keyframes pulse-ring {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.06); opacity: 0.85; }
+}
 .frame-mini { margin-top: 4px; width: 100%; }
 .frame-thumb-empty { position: relative; width: 100%; height: 100%; display:flex; align-items:center; justify-content:center; }
 
